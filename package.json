@@ -1,0 +1,40 @@
+{
+  "name": "sentinelquant",
+  "version": "1.0.0",
+  "description": "News-Sentiment-Driven Quant Portfolio - AI-Powered Investment Platform",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "scrape": "node server/scrapers/runScraper.js",
+    "backtest": "node server/quant/backtest.js",
+    "db:migrate": "node server/db/migrate.js",
+    "db:seed": "node server/db/seed.js"
+  },
+  "keywords": [
+    "fintech",
+    "sentiment-analysis",
+    "portfolio",
+    "finbert",
+    "quantitative-finance"
+  ],
+  "author": "SentinelQuant Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "cheerio": "^1.0.0-rc.12",
+    "axios": "^1.6.5",
+    "node-cron": "^3.0.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}
