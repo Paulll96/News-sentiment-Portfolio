@@ -10,10 +10,7 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-/**
- * POST /api/auth/register
- * Register a new user
- */
+
 router.post('/register', async (req, res) => {
     try {
         const { email, password, name } = req.body;
@@ -143,10 +140,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     }
 });
 
-/**
- * POST /api/auth/logout
- * Logout user (client-side token removal)
- */
+
 router.post('/logout', authenticateToken, (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });

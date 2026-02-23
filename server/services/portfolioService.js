@@ -1,7 +1,4 @@
-/**
- * Portfolio Management and Rebalancing Engine
- * Implements sentiment-driven portfolio allocation
- */
+
 
 const { query, transaction } = require('../db');
 const { calculateWSS, getAllStockSentiments } = require('./sentimentService');
@@ -16,7 +13,7 @@ const CONFIG = {
 };
 
 /**
- * Calculate target weights based on sentiment scores
+ 
  * @param {Array} sentiments - Array of {symbol, wss, ...}
  * @returns {Object} - { symbol: targetWeight }
  */

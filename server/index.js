@@ -123,6 +123,9 @@ app.listen(PORT, () => {
     ║                                                       ║
     ╚═══════════════════════════════════════════════════════╝
     `);
+
+    // Start automated background tasks
+    require('./cron').startCronJobs();
 });
 
 module.exports = app;

@@ -8,7 +8,7 @@ const { query } = require('../db');
 const { detectStockMentions } = require('../scrapers/newsScraper');
 
 // Hugging Face Inference API endpoint for FinBERT
-const FINBERT_API = 'https://api-inference.huggingface.co/models/ProsusAI/finbert';
+const FINBERT_API = 'https://router.huggingface.co/hf-inference/models/ProsusAI/finbert';
 
 /**
  * Analyze sentiment of text using FinBERT via Hugging Face API
