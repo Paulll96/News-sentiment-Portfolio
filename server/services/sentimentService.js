@@ -15,12 +15,16 @@ const FINBERT_API = 'https://router.huggingface.co/hf-inference/models/ProsusAI/
  * @param {string} text - Text to analyze
  * @returns {Object} - { sentiment, confidence, scores }
  */
+let mockFallbackCount = 0;
+
 async function analyzeSentiment(text) {
     const apiKey = process.env.HUGGINGFACE_API_KEY;
 
     if (!apiKey) {
-        // Return mock sentiment if no API key (for development)
-        console.log('⚠️ No Hugging Face API key, using mock sentiment');
+        mockFallbackCount++;
+        if (mockFallbackCount <= 3 || mockFallbackCount % 50 === 0) {
+            console.warn(`⚠️  [MOCK SENTIMENT] No HUGGINGFACE_API_KEY set — using keyword fallback (${mockFallbackCount} articles so far)`);
+        }
         return getMockSentiment(text);
     }
 
@@ -51,16 +55,24 @@ async function analyzeSentiment(text) {
             sentiment: topResult.label.toLowerCase(),
             confidence: topResult.score,
             scores: allScores,
-            raw_score: calculateRawScore(allScores)
+            raw_score: calculateRawScore(allScores),
+            source: 'finbert'
         };
     } catch (error) {
         if (error.response?.status === 503) {
-            console.log('⏳ Model loading, retrying in 20s...');
+            const retryCount = arguments[1] || 0;
+            if (retryCount >= 3) {
+                console.log('⚠️  Model still loading after 3 retries, using mock sentiment');
+                mockFallbackCount++;
+                return getMockSentiment(text);
+            }
+            console.log(`⏳ Model loading, retry ${retryCount + 1}/3 in 20s...`);
             await new Promise(resolve => setTimeout(resolve, 20000));
-            return analyzeSentiment(text); // Retry
+            return analyzeSentiment(text, retryCount + 1);
         }
 
-        console.error('FinBERT API error:', error.message);
+        console.error(`⚠️  [MOCK FALLBACK] FinBERT API error (${error.response?.status || 'network'}): ${error.message}`);
+        mockFallbackCount++;
         return getMockSentiment(text);
     }
 }
@@ -119,7 +131,8 @@ function getMockSentiment(text) {
         sentiment,
         confidence,
         scores,
-        raw_score: calculateRawScore(scores)
+        raw_score: calculateRawScore(scores),
+        source: 'mock'
     };
 }
 
@@ -166,9 +179,9 @@ async function analyzeUnprocessedArticles() {
                 for (const stock of stockResult.rows) {
                     await query(
                         `INSERT INTO sentiment_scores 
-                         (article_id, stock_id, sentiment, confidence, raw_score)
-                         VALUES ($1, $2, $3, $4, $5)`,
-                        [article.id, stock.id, sentiment.sentiment, sentiment.confidence, sentiment.raw_score]
+                         (article_id, stock_id, sentiment, confidence, raw_score, source)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [article.id, stock.id, sentiment.sentiment, sentiment.confidence, sentiment.raw_score, sentiment.source || 'unknown']
                     );
                 }
             }
@@ -204,9 +217,9 @@ async function calculateWSS(stockId, days = 7) {
         `SELECT raw_score, analyzed_at
          FROM sentiment_scores
          WHERE stock_id = $1
-         AND analyzed_at >= NOW() - INTERVAL '${days} days'
+         AND analyzed_at >= NOW() - ($2 || ' days')::interval
          ORDER BY analyzed_at DESC`,
-        [stockId]
+        [stockId, String(days)]
     );
 
     if (result.rows.length === 0) {
@@ -237,14 +250,14 @@ async function calculateWSS(stockId, days = 7) {
 /**
  * Get sentiment summary for all stocks
  */
-async function getAllStockSentiments() {
+async function getAllStockSentiments(days = 7) {
     const stocksResult = await query('SELECT id, symbol, name FROM stocks WHERE is_active = true');
     const stocks = stocksResult.rows;
 
     const sentiments = [];
 
     for (const stock of stocks) {
-        const { wss, articleCount } = await calculateWSS(stock.id);
+        const { wss, articleCount } = await calculateWSS(stock.id, days);
 
         sentiments.push({
             symbol: stock.symbol,

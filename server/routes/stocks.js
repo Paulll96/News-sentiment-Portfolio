@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -60,7 +60,7 @@ router.get('/:symbol', async (req, res) => {
  * POST /api/stocks
  * Add a new stock to track
  */
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { symbol, name, sector } = req.body;
 

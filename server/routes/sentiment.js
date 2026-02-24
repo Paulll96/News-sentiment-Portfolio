@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const { authenticateToken, optionalAuth, requireAdmin } = require('../middleware/auth');
 const { getAllStockSentiments, analyzeUnprocessedArticles, calculateWSS } = require('../services/sentimentService');
 
 const router = express.Router();
@@ -15,10 +15,11 @@ const router = express.Router();
  */
 router.get('/', optionalAuth, async (req, res) => {
     try {
-        const sentiments = await getAllStockSentiments();
+        const days = parseInt(req.query.days) || 7;
+        const sentiments = await getAllStockSentiments(days);
 
-        // Free tier: limit to 5 stocks
-        const limit = req.user?.tier === 'pro' ? sentiments.length : 5;
+        // Free tier: limit to 5 stocks; pro and enterprise get full access
+        const limit = (req.user?.tier === 'pro' || req.user?.tier === 'enterprise') ? sentiments.length : 5;
 
         res.json({
             sentiments: sentiments.slice(0, limit),
@@ -86,7 +87,7 @@ router.get('/:symbol', async (req, res) => {
  * POST /api/sentiment/analyze
  * Trigger sentiment analysis for unprocessed articles
  */
-router.post('/analyze', authenticateToken, async (req, res) => {
+router.post('/analyze', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const analyzed = await analyzeUnprocessedArticles();
         res.json({
@@ -114,9 +115,9 @@ router.get('/history/:symbol', async (req, res) => {
              FROM daily_sentiment ds
              JOIN stocks s ON ds.stock_id = s.id
              WHERE s.symbol = $1
-             AND ds.date >= CURRENT_DATE - INTERVAL '${days} days'
+             AND ds.date >= CURRENT_DATE - ($2 || ' days')::interval
              ORDER BY ds.date ASC`,
-            [symbol.toUpperCase()]
+            [symbol.toUpperCase(), String(days)]
         );
 
         res.json({

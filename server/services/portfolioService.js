@@ -161,7 +161,7 @@ async function rebalancePortfolio(userId, dryRun = true) {
 }
 
 /**
- * Execute trades (update holdings and log transactions)
+ * Execute trades — creates explicit buy/sell transactions (NOT type='rebalance')
  */
 async function executeTrades(userId, trades, portfolioValue) {
     await transaction(async (client) => {
@@ -176,12 +176,16 @@ async function executeTrades(userId, trades, portfolioValue) {
 
             const stockId = stockResult.rows[0].id;
             const tradeValue = parseFloat(trade.tradeValue);
+            // Use a representative price (value / approximate shares)
+            const approxPrice = tradeValue > 0 ? tradeValue : 1;
+            const approxShares = tradeValue / approxPrice;
 
-            // Log transaction
+            // Log as explicit buy or sell — not 'rebalance' with zeroed fields
             await client.query(
                 `INSERT INTO transactions (user_id, stock_id, type, shares, price, total_value, reason)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [userId, stockId, 'rebalance', 0, 0, tradeValue, trade.reason]
+                [userId, stockId, trade.type, approxShares, approxPrice, tradeValue,
+                    `Rebalance: ${trade.reason}`]
             );
 
             // Update or create holding
@@ -190,10 +194,10 @@ async function executeTrades(userId, trades, portfolioValue) {
 
             await client.query(
                 `INSERT INTO portfolio_holdings (user_id, stock_id, shares, current_value, weight, sentiment_score)
-                 VALUES ($1, $2, 0, $3, $4, $5)
+                 VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (user_id, stock_id) 
-                 DO UPDATE SET current_value = $3, weight = $4, sentiment_score = $5, updated_at = NOW()`,
-                [userId, stockId, newValue, newWeight, parseFloat(trade.sentiment)]
+                 DO UPDATE SET current_value = $4, weight = $5, sentiment_score = $6, updated_at = NOW()`,
+                [userId, stockId, approxShares, newValue, newWeight, parseFloat(trade.sentiment)]
             );
         }
     });
@@ -203,6 +207,7 @@ async function executeTrades(userId, trades, portfolioValue) {
 
 /**
  * Initialize a new portfolio with default allocation
+ * Creates both holdings AND corresponding buy transactions for ledger integrity
  */
 async function initializePortfolio(userId, initialCapital = 10000) {
     const sentiments = await getAllStockSentiments();
@@ -220,12 +225,23 @@ async function initializePortfolio(userId, initialCapital = 10000) {
             const stockId = stockResult.rows[0].id;
             const value = initialCapital * weight;
             const sentiment = sentiments.find(s => s.symbol === symbol);
+            // Use value as both price and 1 share (notional position)
+            const approxPrice = value > 0 ? value : 1;
+            const approxShares = value / approxPrice;
 
+            // Create holding
             await client.query(
                 `INSERT INTO portfolio_holdings (user_id, stock_id, shares, current_value, weight, sentiment_score)
-                 VALUES ($1, $2, 0, $3, $4, $5)
+                 VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (user_id, stock_id) DO NOTHING`,
-                [userId, stockId, value, weight, sentiment?.wss || 0]
+                [userId, stockId, approxShares, value, weight, sentiment?.wss || 0]
+            );
+
+            // Create matching buy transaction for ledger integrity
+            await client.query(
+                `INSERT INTO transactions (user_id, stock_id, type, shares, price, total_value, reason)
+                 VALUES ($1, $2, 'buy', $3, $4, $5, 'Initial portfolio allocation')`,
+                [userId, stockId, approxShares, approxPrice, value]
             );
         }
     });

@@ -5,11 +5,19 @@ import { ToastProvider } from './context/ToastContext';
 import Sidebar from './components/Sidebar';
 import SentimentTicker from './components/SentimentTicker';
 import AuthModal from './components/AuthModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import Dashboard from './pages/Dashboard';
 import Sentiment from './pages/Sentiment';
 import Portfolio from './pages/Portfolio';
 import Backtest from './pages/Backtest';
 import News from './pages/News';
+import Settings from './pages/Settings';
+import StockDetail from './pages/StockDetail';
+import NotificationBell from './components/NotificationBell';
+import SearchBar from './components/SearchBar';
+import ThemeToggle from './components/ThemeToggle';
+import Waves from './components/ReactBits/Waves';
+import NotFound from './pages/NotFound';
 
 function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -18,7 +26,21 @@ function AppShell() {
   const { user } = useAuth();
 
   return (
-    <div className="app-layout">
+    <div className="app-layout" style={{ position: 'relative' }}>
+      <Waves
+        lineColor="rgba(255, 255, 255, 0.05)"
+        backgroundColor="transparent"
+        waveSpeedX={0.02}
+        waveSpeedY={0.01}
+        waveAmpX={40}
+        waveAmpY={20}
+        friction={0.9}
+        tension={0.01}
+        maxCursorMove={120}
+        xGap={12}
+        yGap={36}
+      />
+
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
@@ -64,12 +86,18 @@ function AppShell() {
           {/* Spacer to push auth to right if menu is hidden */}
           <div style={{ flex: 1 }}></div>
 
+          <SearchBar />
+
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             {user ? (
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="user-avatar-sm">{user.name ? user.name[0] : 'U'}</span>
-                <span className="desktop-only">{user.name || user.email}</span>
-              </span>
+              <>
+                <ThemeToggle />
+                <NotificationBell />
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="user-avatar-sm">{user.name ? user.name[0] : 'U'}</span>
+                  <span className="desktop-only">{user.name || user.email}</span>
+                </span>
+              </>
             ) : (
               <>
                 <button className="btn btn-ghost" onClick={() => setAuthOpen(true)}>Login</button>
@@ -80,13 +108,18 @@ function AppShell() {
         </div>
 
         <div className="page-content">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/sentiment" element={<Sentiment />} />
-            <Route path="/portfolio" element={<Portfolio />} />
-            <Route path="/backtest" element={<Backtest />} />
-            <Route path="/news" element={<News />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/sentiment" element={<Sentiment />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/backtest" element={<Backtest />} />
+              <Route path="/news" element={<News />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/stock/:symbol" element={<StockDetail />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
         </div>
       </div>
 

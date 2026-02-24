@@ -1,58 +1,66 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../utils/api';
 import { useToast } from '../context/ToastContext';
-
-const mockNews = [
-    { title: 'NVIDIA Announces Record-Breaking Q4 Earnings, AI Demand Soars', source: 'Reuters', sentiment: 'positive', time: '2 hours ago', symbol: 'NVDA' },
-    { title: 'Apple Vision Pro Sales Exceed Expectations in First Month', source: 'Bloomberg', sentiment: 'positive', time: '3 hours ago', symbol: 'AAPL' },
-    { title: 'Tesla Faces Production Delays at Berlin Factory', source: 'WSJ', sentiment: 'negative', time: '4 hours ago', symbol: 'TSLA' },
-    { title: 'Microsoft Azure Growth Accelerates Amid AI Integration', source: 'CNBC', sentiment: 'positive', time: '5 hours ago', symbol: 'MSFT' },
-    { title: 'Reddit IPO Filing Reveals Growing User Base', source: 'TechCrunch', sentiment: 'neutral', time: '6 hours ago', symbol: null },
-    { title: 'Amazon Web Services Announces New AI Features', source: 'Yahoo Finance', sentiment: 'positive', time: '7 hours ago', symbol: 'AMZN' },
-    { title: 'Meta Stock Drops on Advertising Revenue Concerns', source: 'MarketWatch', sentiment: 'negative', time: '8 hours ago', symbol: 'META' },
-    { title: 'Google DeepMind Achieves Breakthrough in Protein Folding', source: 'Nature', sentiment: 'positive', time: '10 hours ago', symbol: 'GOOGL' },
-];
+import { SkeletonTableRow } from '../components/Skeleton';
 
 export default function News() {
-    const [articles, setArticles] = useState(mockNews);
+    const [articles, setArticles] = useState(null); // null = loading
     const [source, setSource] = useState('');
+    const [sources, setSources] = useState([]);
     const toast = useToast();
 
+    // Load articles
     useEffect(() => {
-        apiRequest('/news/live')
-            .then(data => { if (data.articles?.length) setArticles(data.articles); })
-            .catch(() => {/* keep mock */ });
+        const params = new URLSearchParams({ limit: '50' });
+        if (source) params.set('source', source);
+
+        apiRequest(`/news?${params.toString()}`)
+            .then(data => setArticles(data.articles || []))
+            .catch(err => {
+                toast(err.message || 'Failed to load news', 'error');
+                setArticles([]);
+            });
+    }, [source]);
+
+    // Load sources dynamically
+    useEffect(() => {
+        apiRequest('/news/sources')
+            .then(data => setSources(data.sources || []))
+            .catch(() => { });
     }, []);
 
     const handleScrape = async () => {
         try {
             toast('Scraping news…', 'info');
+            setArticles(null); // show loading
             await apiRequest('/news/scrape', { method: 'POST' });
             toast('News scraped!', 'success');
-            const data = await apiRequest('/news/live');
-            if (data.articles?.length) setArticles(data.articles);
+            const data = await apiRequest('/news?limit=50');
+            setArticles(data.articles || []);
+            // Reload sources too
+            const srcData = await apiRequest('/news/sources');
+            setSources(srcData.sources || []);
         } catch (e) {
             toast(e.message, 'error');
+            setArticles([]);
         }
     };
 
     const handleAnalyze = async () => {
         try {
             toast('Analyzing sentiment…', 'info');
-            await apiRequest('/sentiment/analyze', { method: 'POST' });
-            toast('Analysis complete!', 'success');
+            const result = await apiRequest('/sentiment/analyze', { method: 'POST' });
+            toast(`Analysis complete! ${result.analyzed} articles analyzed.`, 'success');
         } catch (e) {
             toast(e.message, 'error');
         }
     };
 
-    const filtered = source ? articles.filter(a => (a.source || '').toLowerCase().includes(source)) : articles;
-
     return (
         <div className="page-enter">
             <div className="page-header">
                 <h1>Live News Feed</h1>
-                <p className="subtitle">5,000+ articles analyzed daily with sentiment scoring</p>
+                <p className="subtitle">Multi-source news with FinBERT sentiment scoring</p>
             </div>
 
             <div className="controls-bar">
@@ -60,9 +68,11 @@ export default function News() {
                     <label>Source</label>
                     <select className="select-input" value={source} onChange={e => setSource(e.target.value)}>
                         <option value="">All Sources</option>
-                        <option value="newsapi">NewsAPI</option>
-                        <option value="yahoo">Yahoo Finance</option>
-                        <option value="reddit">Reddit WSB</option>
+                        {sources.map(s => (
+                            <option key={s.source} value={s.source}>
+                                {s.source} ({s.count})
+                            </option>
+                        ))}
                     </select>
                 </div>
                 <button className="btn btn-secondary" onClick={handleScrape}>📥 Scrape News</button>
@@ -71,28 +81,48 @@ export default function News() {
 
             <div className="bento-grid">
                 <div className="glass-card no-hover col-span-12">
-                    {filtered.map((article, i) => {
-                        const s = article.sentiment || 'neutral';
-                        const icon = s === 'positive' ? '📈' : s === 'negative' ? '📉' : '📰';
-                        const time = article.time || (article.published_at ? new Date(article.published_at).toLocaleString() : '');
+                    {articles === null ? (
+                        // Loading skeleton
+                        <div className="data-table-wrap">
+                            <table className="data-table">
+                                <tbody>
+                                    {Array.from({ length: 8 }).map((_, i) => <SkeletonTableRow key={i} />)}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : articles.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+                            <p style={{ fontSize: 18, marginBottom: 8 }}>📰 No articles yet</p>
+                            <p>Click "Scrape News" to fetch articles from all sources</p>
+                        </div>
+                    ) : (
+                        articles.map((article, i) => {
+                            const s = article.sentiment || 'neutral';
+                            const icon = s === 'positive' ? '📈' : s === 'negative' ? '📉' : '📰';
+                            const sentiments = article.sentiments;
+                            const firstSentiment = Array.isArray(sentiments) && sentiments.length > 0 ? sentiments[0] : null;
+                            const displaySentiment = firstSentiment?.sentiment || s;
+                            const displaySymbol = firstSentiment?.symbol || article.symbol;
+                            const displayIcon = displaySentiment === 'positive' ? '📈' : displaySentiment === 'negative' ? '📉' : '📰';
 
-                        return (
-                            <div className="news-card" key={i}>
-                                <div className={`news-sentiment-icon ${s}`}>{icon}</div>
-                                <div className="news-body">
-                                    <div className="news-title">
-                                        <a href={article.url || '#'} target="_blank" rel="noopener noreferrer">{article.title}</a>
-                                    </div>
-                                    <div className="news-meta">
-                                        <span className="source">{article.source}</span>
-                                        {time && <span>{time}</span>}
-                                        {article.symbol && <span>📌 {article.symbol}</span>}
+                            return (
+                                <div className="news-card" key={article.id || i}>
+                                    <div className={`news-sentiment-icon ${displaySentiment}`}>{displayIcon}</div>
+                                    <div className="news-body">
+                                        <div className="news-title">
+                                            <a href={article.url || '#'} target="_blank" rel="noopener noreferrer">{article.title}</a>
+                                        </div>
+                                        <div className="news-meta">
+                                            <span className="source">{article.source}</span>
+                                            {article.published_at && <span>{new Date(article.published_at).toLocaleString()}</span>}
+                                            {displaySymbol && <span>📌 {displaySymbol}</span>}
+                                            {article.processed && <span style={{ color: 'var(--accent-green)' }}>✓ Analyzed</span>}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                    {filtered.length === 0 && <p className="empty-state">No news articles found</p>}
+                            );
+                        })
+                    )}
                 </div>
             </div>
         </div>

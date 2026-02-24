@@ -2,8 +2,9 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard, Activity, Briefcase, TrendingUp,
-    Newspaper, PanelLeftClose, PanelLeft, LogOut, User, X
+    Newspaper, PanelLeftClose, PanelLeft, LogOut, User, X, Settings
 } from 'lucide-react';
+import DecryptedText from './ReactBits/DecryptedText';
 
 const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -11,6 +12,7 @@ const navItems = [
     { to: '/portfolio', icon: Briefcase, label: 'Portfolio' },
     { to: '/backtest', icon: TrendingUp, label: 'Backtest' },
     { to: '/news', icon: Newspaper, label: 'News' },
+    { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onCloseMobile }) {
@@ -26,7 +28,18 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onCloseMobile
                 <div className="sidebar-header">
                     <div className="sidebar-brand">
                         <div className="logo-icon">📊</div>
-                        <span className="brand-text">SentinelQuant</span>
+                        {!collapsed && (
+                            <DecryptedText
+                                text="SentinelQuant"
+                                speed={40}
+                                maxIterations={15}
+                                characters="ABCD1234!@#$"
+                                className="brand-text"
+                                parentClassName="brand-text-container"
+                                encryptedClassName="opacity-50"
+                                animateOn="hover"
+                            />
+                        )}
                     </div>
 
                     {/* Desktop Toggle */}

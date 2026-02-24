@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     name VARCHAR(255),
     tier VARCHAR(20) DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise')),
+    reset_token VARCHAR(255),
+    reset_token_expiry TIMESTAMP,
+    totp_secret VARCHAR(255),
+    totp_enabled BOOLEAN DEFAULT false,
+    totp_backup_codes TEXT,
+    role VARCHAR(20) DEFAULT 'user',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP
@@ -55,6 +61,7 @@ CREATE TABLE IF NOT EXISTS sentiment_scores (
     sentiment VARCHAR(20) CHECK (sentiment IN ('positive', 'negative', 'neutral')),
     confidence DECIMAL(5, 4) CHECK (confidence >= 0 AND confidence <= 1),
     raw_score DECIMAL(10, 6),
+    source VARCHAR(20) DEFAULT 'finbert',
     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -118,6 +125,26 @@ CREATE TABLE IF NOT EXISTS daily_sentiment (
     UNIQUE(stock_id, date)
 );
 
+-- Watchlist table (user favorites)
+CREATE TABLE IF NOT EXISTS watchlist (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    stock_id UUID REFERENCES stocks(id) ON DELETE CASCADE,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, stock_id)
+);
+
+-- Notifications table (alerts and updates)
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT,
+    read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_news_source ON news_articles(source);
@@ -126,6 +153,13 @@ CREATE INDEX IF NOT EXISTS idx_sentiment_date ON sentiment_scores(analyzed_at DE
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON portfolio_holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_sentiment_date ON daily_sentiment(date DESC);
+CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
+
+-- Backward-safe migration: add source column to existing sentiment_scores tables
+ALTER TABLE sentiment_scores ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'finbert';
+-- Backward-safe migration: add role column to existing users tables
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
 
 -- Insert default stocks (top traded)
 INSERT INTO stocks (symbol, name, sector) VALUES

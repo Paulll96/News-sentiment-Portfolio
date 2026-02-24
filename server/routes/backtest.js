@@ -43,23 +43,99 @@ router.post('/run', authenticateToken, async (req, res) => {
         } = req.body;
 
         // Validate dates
-        const start = new Date(startDate || '2020-01-01');
+        const start = new Date(startDate || '2024-01-01');
         const end = new Date(endDate || new Date());
 
         if (start >= end) {
             return res.status(400).json({ error: 'Start date must be before end date' });
         }
 
-        // Simulate backtest (simplified for demo)
         const years = (end - start) / (365 * 24 * 60 * 60 * 1000);
+        const months = Math.max(1, Math.floor(years * 12));
 
-        // Generate realistic mock results
-        const cagr = 0.15 + Math.random() * 0.10; // 15-25% CAGR
-        const finalValue = initialCapital * Math.pow(1 + cagr, years);
+        // ----- Sentiment-Driven Simulation -----
+        // Query real daily sentiment data for the backtest period
+        const sentimentData = await query(
+            `SELECT date, AVG(weighted_sentiment) as avg_wss, SUM(article_count) as total_articles
+             FROM daily_sentiment
+             WHERE date >= $1 AND date <= $2
+             GROUP BY date
+             ORDER BY date ASC`,
+            [start.toISOString().split('T')[0], end.toISOString().split('T')[0]]
+        );
+
+        const hasSentimentData = sentimentData.rows.length > 0;
+
+        // Build monthly returns from real sentiment or a baseline model
+        let currentValue = initialCapital;
+        let peak = initialCapital;
+        let maxDrawdown = 0;
+        const equityCurve = [{ date: start.toISOString().split('T')[0], value: initialCapital, benchmark: initialCapital }];
+        const monthlyReturns = [];
+
+        for (let i = 1; i <= months; i++) {
+            const monthStart = new Date(start);
+            monthStart.setMonth(monthStart.getMonth() + (i - 1));
+            const monthEnd = new Date(start);
+            monthEnd.setMonth(monthEnd.getMonth() + i);
+
+            let monthlyReturn;
+
+            if (hasSentimentData) {
+                // Filter sentiment data for this month
+                const monthSentiments = sentimentData.rows.filter(r => {
+                    const d = new Date(r.date);
+                    return d >= monthStart && d < monthEnd;
+                });
+
+                if (monthSentiments.length > 0) {
+                    const avgWSS = monthSentiments.reduce((sum, r) => sum + parseFloat(r.avg_wss || 0), 0) / monthSentiments.length;
+                    // Sentiment-driven return: positive sentiment → positive return, scaled
+                    // Base market return (~0.8%/month) + sentiment alpha (WSS * 2%)
+                    monthlyReturn = 0.008 + (avgWSS * 0.02);
+                } else {
+                    // No data for this month, use conservative baseline
+                    monthlyReturn = 0.006; // ~7.4% annual
+                }
+            } else {
+                // No sentiment data at all — use a conservative fixed model
+                // This is transparent: we say "no data available"
+                monthlyReturn = 0.0065; // ~8% annual baseline
+            }
+
+            // Clamp to realistic bounds (-15% to +15% monthly)
+            monthlyReturn = Math.max(-0.15, Math.min(0.15, monthlyReturn));
+
+            currentValue *= (1 + monthlyReturn);
+            monthlyReturns.push(monthlyReturn);
+
+            // Track drawdown
+            if (currentValue > peak) peak = currentValue;
+            const drawdown = (peak - currentValue) / peak;
+            if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+
+            // Equity curve point
+            const date = new Date(start);
+            date.setMonth(date.getMonth() + i);
+            equityCurve.push({
+                date: date.toISOString().split('T')[0],
+                value: Math.round(currentValue * 100) / 100,
+                benchmark: Math.round(initialCapital * Math.pow(1.10, i / 12) * 100) / 100 // 10% annual benchmark
+            });
+        }
+
+        const finalValue = currentValue;
         const totalReturn = (finalValue - initialCapital) / initialCapital;
-        const sharpeRatio = 1.2 + Math.random() * 0.5; // 1.2-1.7
-        const maxDrawdown = 0.10 + Math.random() * 0.15; // 10-25%
-        const alpha = 0.02 + Math.random() * 0.03; // 2-5%
+        const cagr = Math.pow(finalValue / initialCapital, 1 / Math.max(years, 0.1)) - 1;
+
+        // Sharpe Ratio calculation (annualized)
+        const avgMonthlyReturn = monthlyReturns.reduce((a, b) => a + b, 0) / monthlyReturns.length;
+        const stdDev = Math.sqrt(monthlyReturns.reduce((sum, r) => sum + Math.pow(r - avgMonthlyReturn, 2), 0) / monthlyReturns.length);
+        const riskFreeRate = 0.04 / 12; // ~4% annual risk-free rate
+        const sharpeRatio = stdDev > 0 ? ((avgMonthlyReturn - riskFreeRate) / stdDev) * Math.sqrt(12) : 0;
+
+        // Alpha = portfolio CAGR - benchmark CAGR (10%)
+        const alpha = cagr - 0.10;
 
         // Save backtest result
         const result = await query(
@@ -79,36 +155,21 @@ router.post('/run', authenticateToken, async (req, res) => {
                 sharpeRatio.toFixed(4),
                 maxDrawdown.toFixed(4),
                 alpha.toFixed(4),
-                Math.floor(years * 12), // Monthly rebalancing
-                JSON.stringify({ strategy: 'sentiment_weighted', rebalance: 'monthly' })
+                months,
+                JSON.stringify({
+                    strategy: 'sentiment_weighted',
+                    rebalance: 'monthly',
+                    sentimentDataAvailable: hasSentimentData,
+                    sentimentDataPoints: sentimentData.rows.length,
+                })
             ]
         );
-
-        // Generate equity curve data points
-        const equityCurve = [];
-        const months = Math.floor(years * 12);
-        let currentValue = initialCapital;
-        const monthlyReturn = Math.pow(1 + cagr, 1 / 12) - 1;
-
-        for (let i = 0; i <= months; i++) {
-            const date = new Date(start);
-            date.setMonth(date.getMonth() + i);
-
-            // Add some volatility
-            const noise = (Math.random() - 0.5) * 0.02;
-            currentValue *= (1 + monthlyReturn + noise);
-
-            equityCurve.push({
-                date: date.toISOString().split('T')[0],
-                value: Math.round(currentValue * 100) / 100,
-                benchmark: initialCapital * Math.pow(1.10, i / 12) // 10% annual benchmark
-            });
-        }
 
         res.status(201).json({
             message: 'Backtest completed',
             backtest: result.rows[0],
             equityCurve,
+            sentimentDataUsed: hasSentimentData,
             summary: {
                 initialCapital,
                 finalValue: finalValue.toFixed(2),

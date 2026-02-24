@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken, optionalAuth } = require('../middleware/auth');
+const { authenticateToken, optionalAuth, requireAdmin } = require('../middleware/auth');
 const { runAllScrapers, detectStockMentions } = require('../scrapers/newsScraper');
 
 const router = express.Router();
@@ -87,7 +87,7 @@ router.get('/sources', async (req, res) => {
  * POST /api/news/scrape
  * Trigger news scraping
  */
-router.post('/scrape', authenticateToken, async (req, res) => {
+router.post('/scrape', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await runAllScrapers();
 

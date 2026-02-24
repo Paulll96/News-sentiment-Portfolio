@@ -12,42 +12,6 @@ const customTooltipStyle = {
     fontSize: 12,
 };
 
-function simulateBacktest(startDate, endDate, initialCapital) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const years = (end - start) / (365 * 24 * 60 * 60 * 1000);
-    const cagr = 0.15 + Math.random() * 0.10;
-    const finalValue = initialCapital * Math.pow(1 + cagr, years);
-
-    const equityCurve = [];
-    const months = Math.floor(years * 12);
-    let value = parseFloat(initialCapital);
-    const monthlyReturn = Math.pow(1 + cagr, 1 / 12) - 1;
-
-    for (let i = 0; i <= months; i++) {
-        const d = new Date(start);
-        d.setMonth(d.getMonth() + i);
-        value *= (1 + monthlyReturn + (Math.random() - 0.5) * 0.02);
-        equityCurve.push({
-            date: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-            portfolio: Math.round(value),
-            benchmark: Math.round(initialCapital * Math.pow(1.10, i / 12)),
-        });
-    }
-
-    return {
-        summary: {
-            finalValue: finalValue.toFixed(2),
-            totalReturn: ((finalValue / initialCapital - 1) * 100).toFixed(2) + '%',
-            cagr: (cagr * 100).toFixed(2) + '%',
-            sharpeRatio: (1.2 + Math.random() * 0.5).toFixed(2),
-            alpha: (2 + Math.random() * 3).toFixed(2) + '%',
-            maxDrawdown: '-' + (10 + Math.random() * 15).toFixed(2) + '%',
-        },
-        equityCurve,
-    };
-}
-
 export default function Backtest() {
     const toast = useToast();
     const { user } = useAuth();
@@ -58,25 +22,25 @@ export default function Backtest() {
     const [loading, setLoading] = useState(false);
 
     const handleRun = async () => {
+        if (!user) {
+            toast('Please log in to run backtests', 'error');
+            return;
+        }
         setLoading(true);
         toast('Running backtest…', 'info');
         try {
-            let r;
-            if (user) {
-                r = await apiRequest('/backtest/run', {
-                    method: 'POST',
-                    body: JSON.stringify({ startDate, endDate, initialCapital: capital }),
-                });
-            } else {
-                await new Promise(res => setTimeout(res, 800));
-                r = simulateBacktest(startDate, endDate, capital);
-            }
+            const r = await apiRequest('/backtest/run', {
+                method: 'POST',
+                body: JSON.stringify({ startDate, endDate, initialCapital: capital }),
+            });
             setResult(r);
-            toast('Backtest completed!', 'success');
+            toast(r.sentimentDataUsed
+                ? 'Backtest completed with real sentiment data!'
+                : 'Backtest completed (baseline model — no sentiment data in date range)',
+                r.sentimentDataUsed ? 'success' : 'info'
+            );
         } catch (e) {
-            const r = simulateBacktest(startDate, endDate, capital);
-            setResult(r);
-            toast('Using simulated backtest', 'info');
+            toast(e.message || 'Backtest failed', 'error');
         } finally {
             setLoading(false);
         }
@@ -86,7 +50,7 @@ export default function Backtest() {
         <div className="page-enter">
             <div className="page-header">
                 <h1>Backtesting Simulator</h1>
-                <p className="subtitle">Validate strategy with historical data</p>
+                <p className="subtitle">Validate strategy with historical sentiment data</p>
             </div>
 
             <div className="bento-grid">
@@ -108,16 +72,29 @@ export default function Backtest() {
                         <button className="btn btn-primary btn-full" style={{ marginTop: 20 }} onClick={handleRun} disabled={loading}>
                             {loading ? '⏳ Running…' : '🚀 Run Backtest'}
                         </button>
+                        {!user && (
+                            <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                                🔑 Login required to run backtests
+                            </p>
+                        )}
                     </div>
 
                     {result && (
                         <div className="results-grid">
                             <ResultCell label="Final Value" value={formatCurrency(result.summary.finalValue)} />
-                            <ResultCell label="Total Return" value={result.summary.totalReturn} positive />
+                            <ResultCell label="Total Return" value={result.summary.totalReturn} positive={parseFloat(result.summary.totalReturn) > 0} />
                             <ResultCell label="CAGR" value={result.summary.cagr} />
                             <ResultCell label="Sharpe Ratio" value={result.summary.sharpeRatio} />
-                            <ResultCell label="Alpha" value={result.summary.alpha} positive />
+                            <ResultCell label="Alpha" value={result.summary.alpha} positive={parseFloat(result.summary.alpha) > 0} />
                             <ResultCell label="Max Drawdown" value={result.summary.maxDrawdown} negative />
+                            {result.sentimentDataUsed !== undefined && (
+                                <div className="result-cell" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="result-label">Data Source</div>
+                                    <div className={`result-value ${result.sentimentDataUsed ? 'positive' : ''}`}>
+                                        {result.sentimentDataUsed ? '✅ Real Sentiment' : '📊 Baseline Model'}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -149,8 +126,9 @@ export default function Backtest() {
                             </ResponsiveContainer>
                         </div>
                     ) : (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-                            Run backtest to view chart
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', flexDirection: 'column', gap: 8 }}>
+                            <span style={{ fontSize: 32 }}>📈</span>
+                            <span>{user ? 'Run a backtest to view the equity curve' : 'Log in to run backtests'}</span>
                         </div>
                     )}
                 </div>

@@ -73,9 +73,9 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Find user (include role for admin check)
+        // Find user (include role + 2FA status)
         const result = await query(
-            'SELECT id, email, name, password_hash, tier, role FROM users WHERE email = $1',
+            'SELECT id, email, name, password_hash, tier, role, totp_enabled FROM users WHERE email = $1',
             [email]
         );
 
@@ -93,6 +93,20 @@ router.post('/login', async (req, res) => {
 
         // Update last login
         await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+        // If 2FA is enabled, return temp token requiring TOTP validation
+        if (user.totp_enabled) {
+            const tempToken = jwt.sign(
+                { userId: user.id, purpose: '2fa-challenge' },
+                process.env.JWT_SECRET,
+                { expiresIn: '5m' }
+            );
+            return res.json({
+                requires2FA: true,
+                tempToken,
+                message: 'Two-factor authentication required',
+            });
+        }
 
         // Generate JWT token (includes role for admin check)
         const token = jwt.sign(
@@ -143,6 +157,97 @@ router.get('/me', authenticateToken, async (req, res) => {
 
 router.post('/logout', authenticateToken, (req, res) => {
     res.json({ message: 'Logged out successfully' });
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Request a password reset — generates token, logs reset URL (demo mode)
+ */
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const user = await query('SELECT id FROM users WHERE email = $1', [email]);
+        // Always return success to prevent email enumeration
+        if (user.rows.length === 0) {
+            return res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+        }
+
+        // Generate a secure token
+        const crypto = require('crypto');
+        const token = crypto.randomBytes(32).toString('hex');
+        const hashedToken = await bcrypt.hash(token, 10);
+        const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        // Store hashed token in DB
+        await query(
+            `UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE id = $3`,
+            [hashedToken, expiry, user.rows[0].id]
+        );
+
+        // In production, send email via nodemailer. For demo, log the URL.
+        const resetURL = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
+        console.log(`\n🔑 PASSWORD RESET LINK (demo mode):\n   ${resetURL}\n`);
+
+        res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'Failed to process request' });
+    }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Reset password using a valid token
+ */
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { email, token, newPassword } = req.body;
+        if (!email || !token || !newPassword) {
+            return res.status(400).json({ error: 'Email, token, and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const user = await query(
+            'SELECT id, reset_token, reset_token_expiry FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (user.rows.length === 0 || !user.rows[0].reset_token) {
+            return res.status(400).json({ error: 'Invalid or expired reset token' });
+        }
+
+        const { id, reset_token, reset_token_expiry } = user.rows[0];
+
+        // Check expiry
+        if (new Date() > new Date(reset_token_expiry)) {
+            return res.status(400).json({ error: 'Reset token has expired. Please request a new one.' });
+        }
+
+        // Verify token
+        const valid = await bcrypt.compare(token, reset_token);
+        if (!valid) {
+            return res.status(400).json({ error: 'Invalid or expired reset token' });
+        }
+
+        // Hash new password and clear token
+        const salt = await bcrypt.genSalt(12);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        await query(
+            `UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expiry = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+            [hashedPassword, id]
+        );
+
+        res.json({ message: 'Password reset successfully. You can now log in.' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: 'Failed to reset password' });
+    }
 });
 
 module.exports = router;

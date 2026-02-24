@@ -1,0 +1,8 @@
+.card-spotlight {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-spotlight:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}

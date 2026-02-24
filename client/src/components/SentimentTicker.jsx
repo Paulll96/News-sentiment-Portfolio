@@ -1,23 +1,15 @@
-const tickerData = [
-    { symbol: 'AAPL', value: +0.72, },
-    { symbol: 'TSLA', value: -0.45, },
-    { symbol: 'NVDA', value: +0.88, },
-    { symbol: 'MSFT', value: +0.12, },
-    { symbol: 'GOOGL', value: +0.55, },
-    { symbol: 'META', value: -0.32, },
-    { symbol: 'AMZN', value: +0.41, },
-    { symbol: 'JPM', value: +0.08, },
-    { symbol: 'V', value: +0.25, },
-    { symbol: 'JNJ', value: -0.05, },
-];
+import { useState, useEffect } from 'react';
+import ShinyText from './ReactBits/ShinyText';
+import { apiRequest } from '../utils/api';
 
-function TickerItems() {
-    return tickerData.map((t, i) => {
-        // Only "positive", "negative", "neutral" classes
+function TickerItems({ data }) {
+    return data.map((t, i) => {
         const cls = t.value > 0.15 ? 'positive' : t.value < -0.15 ? 'negative' : 'neutral';
         return (
             <span className={`ticker-item ${cls}`} key={i}>
-                <span className="ticker-symbol">{t.symbol}</span>
+                <span className="ticker-symbol">
+                    <ShinyText text={t.symbol} disabled={false} speed={3} className="" />
+                </span>
                 <span className="ticker-value">{t.value > 0 ? '+' : ''}{t.value.toFixed(2)}</span>
             </span>
         );
@@ -25,11 +17,28 @@ function TickerItems() {
 }
 
 export default function SentimentTicker() {
+    const [tickerData, setTickerData] = useState([]);
+
+    useEffect(() => {
+        apiRequest('/sentiment')
+            .then(data => {
+                if (data.sentiments && data.sentiments.length > 0) {
+                    setTickerData(data.sentiments.map(s => ({
+                        symbol: s.symbol,
+                        value: s.wss || 0
+                    })));
+                }
+            })
+            .catch(() => { /* Ticker is non-critical, fail silently */ });
+    }, []);
+
+    if (tickerData.length === 0) return null;
+
     return (
         <div className="sentiment-ticker">
             <div className="ticker-track">
-                <TickerItems />
-                <TickerItems />
+                <TickerItems data={tickerData} />
+                <TickerItems data={tickerData} />
             </div>
         </div>
     );
