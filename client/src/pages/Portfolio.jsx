@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { SkeletonTableRow } from '../components/Skeleton';
 import { exportPortfolio } from '../utils/export';
+import StarBorder from '../components/ReactBits/StarBorder';
 
 export default function Portfolio() {
     const { user } = useAuth();
@@ -81,7 +82,9 @@ export default function Portfolio() {
             ) : (
                 <>
                     <div className="controls-bar">
-                        <button className="btn btn-primary" onClick={handleInit} disabled={loading}>🚀 Initialize Portfolio</button>
+                        <StarBorder as="div" color="#22d3a7" speed="5s">
+                            <button className="btn btn-primary" onClick={handleInit} disabled={loading} style={{ border: 'none', background: 'transparent', color: '#fff' }}>🚀 Initialize Portfolio</button>
+                        </StarBorder>
                         <button className="btn btn-secondary" onClick={handleRebalance} disabled={loading}>⚖️ Rebalance (Preview)</button>
                         <button className="btn btn-success" onClick={handleExecuteRebalance} disabled={loading || trades.length === 0}>✅ Execute Rebalance</button>
                         {holdings && holdings.length > 0 && (

@@ -825,6 +825,11 @@ body::before {
   width: auto;
 }
 
+.main-area.no-sidebar {
+  margin-left: 0;
+  width: 100%;
+}
+
 /* ── Sidebar ── */
 .sidebar {
   position: fixed;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiRequest } from '../utils/api';
 import { useToast } from '../context/ToastContext';
 import { SkeletonTableRow } from '../components/Skeleton';
+import StarBorder from '../components/ReactBits/StarBorder';
 
 export default function News() {
     const [articles, setArticles] = useState(null); // null = loading
@@ -76,7 +77,9 @@ export default function News() {
                     </select>
                 </div>
                 <button className="btn btn-secondary" onClick={handleScrape}>📥 Scrape News</button>
-                <button className="btn btn-primary" onClick={handleAnalyze}>🧠 Analyze</button>
+                <StarBorder as="div" color="#3b82f6" speed="5s">
+                    <button className="btn btn-primary" onClick={handleAnalyze} style={{ border: 'none', background: 'transparent', color: '#fff' }}>🧠 Analyze</button>
+                </StarBorder>
             </div>
 
             <div className="bento-grid">

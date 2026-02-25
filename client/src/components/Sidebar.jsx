@@ -1,10 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard, Activity, Briefcase, TrendingUp,
     Newspaper, PanelLeftClose, PanelLeft, LogOut, User, X, Settings
 } from 'lucide-react';
 import DecryptedText from './ReactBits/DecryptedText';
+import StaggeredMenu from './ReactBits/StaggeredMenu';
 
 const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -15,8 +16,23 @@ const navItems = [
     { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
+const staggeredMenuItems = navItems.map(item => ({
+    label: item.label,
+    ariaLabel: `Go to ${item.label}`,
+    link: item.to
+}));
+
+const socialItems = [
+    { label: 'GitHub', link: 'https://github.com/Paulll96' },
+];
+
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onCloseMobile }) {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
+
+    const handleStaggeredItemClick = (item) => {
+        navigate(item.link);
+    };
 
     return (
         <>
@@ -67,6 +83,24 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onCloseMobile
                         </NavLink>
                     ))}
                 </nav>
+
+                {/* Staggered Menu Overlay Toggle */}
+                <div style={{ padding: '0 12px', marginTop: 8 }}>
+                    <StaggeredMenu
+                        position="right"
+                        items={staggeredMenuItems}
+                        socialItems={socialItems}
+                        displaySocials={true}
+                        displayItemNumbering={true}
+                        menuButtonColor="#94a3b8"
+                        openMenuButtonColor="#fff"
+                        changeMenuColorOnOpen={true}
+                        colors={['#0a0d14', '#0f1117', '#161b26']}
+                        accentColor="#22d3a7"
+                        isFixed={true}
+                        onItemClick={handleStaggeredItemClick}
+                    />
+                </div>
 
                 <div className="sidebar-footer">
                     {user ? (

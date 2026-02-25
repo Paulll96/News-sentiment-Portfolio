@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { apiRequest, formatCurrency } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import StarBorder from '../components/ReactBits/StarBorder';
 import { ResponsiveContainer, AreaChart, Area, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 const customTooltipStyle = {
@@ -69,9 +70,11 @@ export default function Backtest() {
                             <label>Initial Capital ($)</label>
                             <input className="input" type="number" value={capital} onChange={e => setCapital(e.target.value)} />
                         </div>
-                        <button className="btn btn-primary btn-full" style={{ marginTop: 20 }} onClick={handleRun} disabled={loading}>
-                            {loading ? '⏳ Running…' : '🚀 Run Backtest'}
-                        </button>
+                        <StarBorder as="div" color="#22d3a7" speed="5s" className="btn-full" style={{ marginTop: 20, width: '100%' }}>
+                            <button className="btn btn-primary btn-full" onClick={handleRun} disabled={loading} style={{ width: '100%', border: 'none', background: 'transparent', color: '#fff' }}>
+                                {loading ? '⏳ Running…' : '🚀 Run Backtest'}
+                            </button>
+                        </StarBorder>
                         {!user && (
                             <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                                 🔑 Login required to run backtests

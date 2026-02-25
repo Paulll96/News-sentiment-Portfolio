@@ -1,10 +1,11 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip,
     PieChart, Pie, Cell, Legend, Area, AreaChart, Sector
 } from 'recharts';
 import { Link } from 'react-router-dom';
 import SpotlightCard from '../components/ReactBits/SpotlightCard';
+import { ParticleCard, GlobalSpotlight, BentoCardGrid, useMobileDetection } from '../components/ReactBits/MagicBento';
 import { apiRequest, formatCurrency } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { SkeletonStatCard, SkeletonChartCard } from '../components/Skeleton';
@@ -73,6 +74,8 @@ export default function Dashboard() {
     const [data, setData] = useState(null); // null = loading
     const [error, setError] = useState(null);
     const [activeIndex, setActiveIndex] = useState(0);
+    const heatmapGridRef = useRef(null);
+    const isMobile = useMobileDetection();
 
     useEffect(() => {
         if (!user) {
@@ -244,27 +247,52 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* ── Sentiment Heatmap ── */}
+            {/* ── Sentiment Heatmap (MagicBento) ── */}
             <div className="glass-card no-hover col-span-12">
                 <div className="card-header">
                     <h3>🔥 Sentiment Heatmap</h3>
                     <span className="badge badge-live">Live</span>
                 </div>
-                <div className="heatmap-grid">
+                <GlobalSpotlight
+                    gridRef={heatmapGridRef}
+                    disableAnimations={isMobile}
+                    enabled={heatmap.length > 0}
+                    spotlightRadius={400}
+                    glowColor="34, 211, 167"
+                />
+                <BentoCardGrid gridRef={heatmapGridRef}>
                     {heatmap.length > 0 ? heatmap.map(s => {
                         const cls = s.score > 0.2 ? 'bullish' : s.score < -0.2 ? 'bearish' : 'neutral';
+                        const glowColor = s.score > 0.2 ? '34, 211, 167' : s.score < -0.2 ? '244, 63, 94' : '100, 116, 139';
                         return (
-                            <Link to={`/stock/${s.symbol}`} className={`heatmap-cell ${cls}`} key={s.symbol} style={{ textDecoration: 'none' }}>
-                                <span className="h-symbol">{s.symbol}</span>
-                                <span className="h-score">{s.score > 0 ? '+' : ''}{s.score.toFixed(2)}</span>
-                            </Link>
+                            <ParticleCard
+                                key={s.symbol}
+                                className={`magic-bento-card magic-bento-card--border-glow`}
+                                disableAnimations={isMobile}
+                                particleCount={8}
+                                glowColor={glowColor}
+                                clickEffect
+                                style={{ '--glow-color': glowColor, cursor: 'pointer' }}
+                            >
+                                <Link to={`/stock/${s.symbol}`} style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
+                                    <div className="magic-bento-card__header">
+                                        <div className="magic-bento-card__label">{cls === 'bullish' ? '📈' : cls === 'bearish' ? '📉' : '➡️'}</div>
+                                    </div>
+                                    <div className="magic-bento-card__content">
+                                        <h2 className="magic-bento-card__title">{s.symbol}</h2>
+                                        <p className={`magic-bento-card__description`} style={{ color: s.score > 0 ? '#22d3a7' : s.score < 0 ? '#f43f5e' : '#94a3b8', fontWeight: 700, fontSize: 16 }}>
+                                            {s.score > 0 ? '+' : ''}{s.score.toFixed(3)}
+                                        </p>
+                                    </div>
+                                </Link>
+                            </ParticleCard>
                         );
                     }) : (
                         <div style={{ padding: 32, color: 'var(--text-muted)', textAlign: 'center', gridColumn: '1 / -1' }}>
                             No sentiment data yet — run a scrape from the News page
                         </div>
                     )}
-                </div>
+                </BentoCardGrid>
             </div>
         </div>
     );
