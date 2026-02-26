@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
@@ -18,6 +18,8 @@ import ThemeToggle from './components/ThemeToggle';
 import Waves from './components/ReactBits/Waves';
 import StaggeredMenu from './components/ReactBits/StaggeredMenu';
 import NotFound from './pages/NotFound';
+
+const Landing = lazy(() => import('./pages/Landing'));
 
 const menuItems = [
   { label: 'Dashboard', ariaLabel: 'Go to Dashboard', link: '/' },
@@ -151,7 +153,16 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <AppShell />
+          <Routes>
+            {/* Landing page — standalone, no app chrome */}
+            <Route path="/landing" element={
+              <Suspense fallback={<div style={{ background: '#06090f', height: '100vh' }} />}>
+                <Landing />
+              </Suspense>
+            } />
+            {/* All app routes — with top bar + StaggeredMenu */}
+            <Route path="/*" element={<AppShell />} />
+          </Routes>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
