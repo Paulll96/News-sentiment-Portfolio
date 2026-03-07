@@ -637,6 +637,77 @@ body::before {
   margin-bottom: 20px;
 }
 
+.portfolio-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.portfolio-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.portfolio-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.portfolio-search-item:hover,
+.portfolio-search-item.active {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.portfolio-selected-stock {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.portfolio-import-preview {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 14px;
+}
+
+.portfolio-import-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.portfolio-import-errors {
+  margin-top: 10px;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.portfolio-import-error-row {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
 /* ── Holdings / Trades ── */
 .list-item {
   display: flex;

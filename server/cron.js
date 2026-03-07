@@ -7,6 +7,7 @@
 const cron = require('node-cron');
 const { runAllScrapers } = require('./scrapers/newsScraper');
 const { analyzeUnprocessedArticles } = require('./services/sentimentService');
+const { syncInstrumentMaster } = require('./services/instrumentService');
 const { query } = require('./db');
 const { broadcastScrapeComplete, broadcastSentimentUpdate } = require('./socket');
 
@@ -160,10 +161,28 @@ const pipelineJob = cron.schedule(cronSchedule, async () => {
     scheduled: false
 });
 
+// Daily instrument universe sync (NSE)
+const instrumentSyncJob = cron.schedule('10 2 * * *', async () => {
+    try {
+        const result = await syncInstrumentMaster();
+        console.log(`🗂️ Instrument sync completed: ${result.synced} rows`);
+    } catch (error) {
+        console.error('⚠️  Instrument sync failed:', error.message);
+    }
+}, {
+    scheduled: false
+});
+
 // Export a function to start all cron jobs
 function startCronJobs() {
     console.log(`🕒 Pipeline job scheduled to run every ${scrapeInterval} minutes.`);
     pipelineJob.start();
+    instrumentSyncJob.start();
+
+    // Attempt an initial sync on boot; fail softly if source unavailable.
+    syncInstrumentMaster()
+        .then(result => console.log(`🗂️ Initial instrument sync: ${result.synced} rows`))
+        .catch(err => console.warn(`⚠️  Initial instrument sync skipped: ${err.message}`));
 }
 
 module.exports = { startCronJobs };

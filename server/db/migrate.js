@@ -33,12 +33,39 @@ CREATE TABLE IF NOT EXISTS users (
 -- Stocks table (tracked securities)
 CREATE TABLE IF NOT EXISTS stocks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    symbol VARCHAR(10) UNIQUE NOT NULL,
+    symbol VARCHAR(24) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     sector VARCHAR(100),
+    exchange VARCHAR(16) DEFAULT 'US',
+    country VARCHAR(2) DEFAULT 'US',
+    currency VARCHAR(3) DEFAULT 'USD',
     market_cap DECIMAL(20, 2),
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Searchable instrument universe (kept separate from tracked stocks table)
+CREATE TABLE IF NOT EXISTS instrument_master (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    symbol VARCHAR(24) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    exchange VARCHAR(16) NOT NULL DEFAULT 'NSE',
+    country VARCHAR(2) DEFAULT 'IN',
+    currency VARCHAR(3) DEFAULT 'INR',
+    isin VARCHAR(20),
+    is_tradable BOOLEAN DEFAULT true,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, exchange)
+);
+
+-- Cached market quotes per tracked stock
+CREATE TABLE IF NOT EXISTS stock_quotes (
+    stock_id UUID PRIMARY KEY REFERENCES stocks(id) ON DELETE CASCADE,
+    price DECIMAL(15, 4) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'INR',
+    source VARCHAR(40) DEFAULT 'unknown',
+    as_of TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- News articles table (scraped content)
@@ -145,6 +172,16 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Backward-safe migration: add source column to existing sentiment_scores tables
+ALTER TABLE sentiment_scores ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'finbert';
+-- Backward-safe migration: add role column to existing users tables
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
+-- Backward-safe migration: extend symbol length + stock metadata
+ALTER TABLE stocks ALTER COLUMN symbol TYPE VARCHAR(24);
+ALTER TABLE stocks ADD COLUMN IF NOT EXISTS exchange VARCHAR(16) DEFAULT 'US';
+ALTER TABLE stocks ADD COLUMN IF NOT EXISTS country VARCHAR(2) DEFAULT 'US';
+ALTER TABLE stocks ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD';
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_news_source ON news_articles(source);
@@ -155,24 +192,23 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_sentiment_date ON daily_sentiment(date DESC);
 CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
-
--- Backward-safe migration: add source column to existing sentiment_scores tables
-ALTER TABLE sentiment_scores ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'finbert';
--- Backward-safe migration: add role column to existing users tables
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
+CREATE INDEX IF NOT EXISTS idx_stocks_exchange_symbol ON stocks(exchange, symbol);
+CREATE INDEX IF NOT EXISTS idx_instrument_exchange_symbol ON instrument_master(exchange, symbol);
+CREATE INDEX IF NOT EXISTS idx_instrument_symbol_lower ON instrument_master(LOWER(symbol));
+CREATE INDEX IF NOT EXISTS idx_instrument_name_lower ON instrument_master(LOWER(name));
 
 -- Insert default stocks (top traded)
-INSERT INTO stocks (symbol, name, sector) VALUES
-    ('AAPL', 'Apple Inc.', 'Technology'),
-    ('MSFT', 'Microsoft Corporation', 'Technology'),
-    ('GOOGL', 'Alphabet Inc.', 'Technology'),
-    ('AMZN', 'Amazon.com Inc.', 'Consumer Cyclical'),
-    ('TSLA', 'Tesla Inc.', 'Automotive'),
-    ('NVDA', 'NVIDIA Corporation', 'Technology'),
-    ('META', 'Meta Platforms Inc.', 'Technology'),
-    ('JPM', 'JPMorgan Chase & Co.', 'Financial'),
-    ('V', 'Visa Inc.', 'Financial'),
-    ('JNJ', 'Johnson & Johnson', 'Healthcare')
+INSERT INTO stocks (symbol, name, sector, exchange, country, currency) VALUES
+    ('AAPL', 'Apple Inc.', 'Technology', 'NASDAQ', 'US', 'USD'),
+    ('MSFT', 'Microsoft Corporation', 'Technology', 'NASDAQ', 'US', 'USD'),
+    ('GOOGL', 'Alphabet Inc.', 'Technology', 'NASDAQ', 'US', 'USD'),
+    ('AMZN', 'Amazon.com Inc.', 'Consumer Cyclical', 'NASDAQ', 'US', 'USD'),
+    ('TSLA', 'Tesla Inc.', 'Automotive', 'NASDAQ', 'US', 'USD'),
+    ('NVDA', 'NVIDIA Corporation', 'Technology', 'NASDAQ', 'US', 'USD'),
+    ('META', 'Meta Platforms Inc.', 'Technology', 'NASDAQ', 'US', 'USD'),
+    ('JPM', 'JPMorgan Chase & Co.', 'Financial', 'NYSE', 'US', 'USD'),
+    ('V', 'Visa Inc.', 'Financial', 'NYSE', 'US', 'USD'),
+    ('JNJ', 'Johnson & Johnson', 'Healthcare', 'NYSE', 'US', 'USD')
 ON CONFLICT (symbol) DO NOTHING;
 
 SELECT 'Migration completed successfully!' as status;

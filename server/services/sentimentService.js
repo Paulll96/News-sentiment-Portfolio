@@ -274,10 +274,43 @@ async function getAllStockSentiments(days = 7) {
     return sentiments;
 }
 
+/**
+ * Get sentiment summary for a specific symbol set
+ */
+async function getStockSentimentsBySymbols(symbols = [], days = 7) {
+    const normalized = [...new Set((symbols || [])
+        .map(s => String(s || '').trim().toUpperCase())
+        .filter(Boolean))];
+
+    if (normalized.length === 0) return [];
+
+    const stocksResult = await query(
+        'SELECT id, symbol, name FROM stocks WHERE symbol = ANY($1::text[])',
+        [normalized]
+    );
+
+    const sentiments = [];
+    for (const stock of stocksResult.rows) {
+        const { wss, articleCount } = await calculateWSS(stock.id, days);
+
+        sentiments.push({
+            symbol: stock.symbol,
+            name: stock.name,
+            wss,
+            articleCount,
+            signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral'
+        });
+    }
+
+    sentiments.sort((a, b) => Math.abs(b.wss) - Math.abs(a.wss));
+    return sentiments;
+}
+
 module.exports = {
     analyzeSentiment,
     analyzeUnprocessedArticles,
     calculateWSS,
     getAllStockSentiments,
+    getStockSentimentsBySymbols,
     calculateRawScore
 };

@@ -69,13 +69,15 @@ export function exportSentiments(sentiments) {
  */
 export function exportPortfolio(holdings) {
     const csv = toCSV(holdings,
-        ['symbol', 'shares', 'current_weight', 'target_weight', 'value'],
+        ['symbol', 'name', 'shares', 'avgCost', 'currentValue', 'weight', 'signal'],
         {
             symbol: 'Symbol',
+            name: 'Company',
             shares: 'Shares',
-            current_weight: 'Current Weight',
-            target_weight: 'Target Weight',
-            value: 'Value (USD)',
+            avgCost: 'Avg Cost',
+            currentValue: 'Value',
+            weight: 'Weight (%)',
+            signal: 'Signal',
         }
     );
     downloadCSV(csv, `sentinelquant_portfolio_${new Date().toISOString().split('T')[0]}.csv`);

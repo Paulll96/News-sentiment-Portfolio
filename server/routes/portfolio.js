@@ -9,7 +9,10 @@ const {
     getPortfolioHoldings,
     rebalancePortfolio,
     initializePortfolio,
-    calculatePortfolioValue
+    calculatePortfolioValue,
+    refreshPortfolioQuotes,
+    addHolding,
+    importHoldings
 } = require('../services/portfolioService');
 
 const router = express.Router();
@@ -20,6 +23,7 @@ const router = express.Router();
  */
 router.get('/', authenticateToken, async (req, res) => {
     try {
+        await refreshPortfolioQuotes(req.user.userId);
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
 
@@ -27,7 +31,10 @@ router.get('/', authenticateToken, async (req, res) => {
             holdings: holdings.map(h => ({
                 symbol: h.symbol,
                 name: h.name,
+                exchange: h.exchange,
+                currency: h.currency || 'INR',
                 shares: parseFloat(h.shares),
+                avgCost: h.avg_cost !== null ? parseFloat(h.avg_cost) : null,
                 currentValue: parseFloat(h.current_value),
                 weight: parseFloat(h.weight) * 100,
                 sentimentScore: parseFloat(h.sentiment_score),
@@ -36,8 +43,10 @@ router.get('/', authenticateToken, async (req, res) => {
             summary: {
                 totalValue,
                 holdingsCount: holdings.length,
-                lastUpdated: holdings[0]?.updated_at || null
-            }
+                lastUpdated: holdings[0]?.updated_at || null,
+                currency: 'INR',
+            },
+            currency: 'INR',
         });
     } catch (error) {
         console.error('Get portfolio error:', error);
@@ -72,6 +81,44 @@ router.post('/initialize', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/portfolio/holdings
+ * Add or increase a holding manually
+ */
+router.post('/holdings', authenticateToken, async (req, res) => {
+    try {
+        const result = await addHolding(req.user.userId, req.body || {});
+
+        if (result.error) {
+            return res.status(400).json(result);
+        }
+
+        res.status(201).json(result);
+    } catch (error) {
+        console.error('Add holding error:', error);
+        res.status(500).json({ error: 'Failed to add holding' });
+    }
+});
+
+/**
+ * POST /api/portfolio/import
+ * Import holdings (dryRun preview by default)
+ */
+router.post('/import', authenticateToken, async (req, res) => {
+    try {
+        const result = await importHoldings(req.user.userId, req.body || {});
+
+        if (result.error) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Import holdings error:', error);
+        res.status(500).json({ error: 'Failed to import holdings' });
+    }
+});
+
+/**
  * POST /api/portfolio/rebalance
  * Rebalance portfolio based on current sentiment
  */
@@ -101,6 +148,7 @@ router.post('/rebalance', authenticateToken, async (req, res) => {
  */
 router.get('/performance', authenticateToken, async (req, res) => {
     try {
+        await refreshPortfolioQuotes(req.user.userId);
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
 
@@ -177,6 +225,7 @@ router.get('/transactions', authenticateToken, async (req, res) => {
  */
 router.get('/dashboard', authenticateToken, async (req, res) => {
     try {
+        await refreshPortfolioQuotes(req.user.userId);
         // 1. Portfolio holdings + value
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);

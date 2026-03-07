@@ -15,8 +15,8 @@ export async function apiRequest(endpoint, options = {}) {
     return data;
 }
 
-export function formatCurrency(v) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+export function formatCurrency(v, currency = 'USD', locale = 'en-US') {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(v);
 }
 
 export function formatPercent(v) {
