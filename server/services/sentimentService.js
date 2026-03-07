@@ -9,6 +9,15 @@ const { detectStockMentions } = require('../scrapers/newsScraper');
 
 // Hugging Face Inference API endpoint for FinBERT
 const FINBERT_API = 'https://router.huggingface.co/hf-inference/models/ProsusAI/finbert';
+const SENTIMENT_SIGNAL_THRESHOLD = Number.parseFloat(process.env.SENTIMENT_SIGNAL_THRESHOLD || '0.1');
+
+function classifySignal(wss) {
+    const value = Number.parseFloat(wss);
+    if (!Number.isFinite(value)) return 'neutral';
+    if (value >= SENTIMENT_SIGNAL_THRESHOLD) return 'bullish';
+    if (value <= -SENTIMENT_SIGNAL_THRESHOLD) return 'bearish';
+    return 'neutral';
+}
 
 /**
  * Analyze sentiment of text using FinBERT via Hugging Face API
@@ -393,7 +402,7 @@ async function getAllStockSentiments(days = 7) {
             currency: stock.currency,
             wss,
             articleCount,
-            signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral'
+            signal: classifySignal(wss)
         });
     }
 
@@ -432,7 +441,7 @@ async function getStockSentimentsBySymbols(symbols = [], days = 7) {
             currency: stock.currency,
             wss,
             articleCount,
-            signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral'
+            signal: classifySignal(wss)
         });
     }
 
@@ -446,5 +455,6 @@ module.exports = {
     calculateWSS,
     getAllStockSentiments,
     getStockSentimentsBySymbols,
-    calculateRawScore
+    calculateRawScore,
+    classifySignal
 };

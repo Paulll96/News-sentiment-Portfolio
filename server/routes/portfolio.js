@@ -14,6 +14,7 @@ const {
     addHolding,
     importHoldings
 } = require('../services/portfolioService');
+const { classifySignal } = require('../services/sentimentService');
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ router.get('/', authenticateToken, async (req, res) => {
                 currentValue: parseFloat(h.current_value),
                 weight: parseFloat(h.weight) * 100,
                 sentimentScore: parseFloat(h.sentiment_score),
-                signal: h.sentiment_score > 0.2 ? 'bullish' : h.sentiment_score < -0.2 ? 'bearish' : 'neutral'
+                signal: classifySignal(h.sentiment_score)
             })),
             summary: {
                 totalValue,

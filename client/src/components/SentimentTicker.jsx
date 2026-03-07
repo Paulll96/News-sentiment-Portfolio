@@ -3,9 +3,11 @@ import ShinyText from './ReactBits/ShinyText';
 import { apiRequest } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
+const SIGNAL_THRESHOLD = 0.1;
+
 function TickerItems({ data }) {
     return data.map((t, i) => {
-        const cls = t.value > 0.15 ? 'positive' : t.value < -0.15 ? 'negative' : 'neutral';
+        const cls = t.value >= SIGNAL_THRESHOLD ? 'positive' : t.value <= -SIGNAL_THRESHOLD ? 'negative' : 'neutral';
         return (
             <span className={`ticker-item ${cls}`} key={i}>
                 <span className="ticker-symbol">

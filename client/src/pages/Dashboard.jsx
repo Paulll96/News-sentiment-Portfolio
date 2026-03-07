@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { SkeletonStatCard, SkeletonChartCard } from '../components/Skeleton';
 
 const PIE_COLORS = ['#3b82f6', '#a78bfa', '#22d3a7', '#fb923c', '#22d3ee', '#475569', '#f43f5e', '#facc15', '#06b6d4', '#8b5cf6'];
+const SIGNAL_THRESHOLD = 0.1;
 
 const customTooltipStyle = {
     background: '#111827',
@@ -262,8 +263,8 @@ export default function Dashboard() {
                 />
                 <BentoCardGrid gridRef={heatmapGridRef}>
                     {heatmap.length > 0 ? heatmap.map(s => {
-                        const cls = s.score > 0.2 ? 'bullish' : s.score < -0.2 ? 'bearish' : 'neutral';
-                        const glowColor = s.score > 0.2 ? '34, 211, 167' : s.score < -0.2 ? '244, 63, 94' : '100, 116, 139';
+                        const cls = s.score >= SIGNAL_THRESHOLD ? 'bullish' : s.score <= -SIGNAL_THRESHOLD ? 'bearish' : 'neutral';
+                        const glowColor = s.score >= SIGNAL_THRESHOLD ? '34, 211, 167' : s.score <= -SIGNAL_THRESHOLD ? '244, 63, 94' : '100, 116, 139';
                         return (
                             <ParticleCard
                                 key={s.symbol}

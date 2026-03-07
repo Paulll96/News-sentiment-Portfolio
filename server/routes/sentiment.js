@@ -9,7 +9,8 @@ const {
     getAllStockSentiments,
     getStockSentimentsBySymbols,
     analyzeUnprocessedArticles,
-    calculateWSS
+    calculateWSS,
+    classifySignal
 } = require('../services/sentimentService');
 
 const router = express.Router();
@@ -26,7 +27,7 @@ router.get('/', optionalAuth, async (req, res) => {
         const includeIndia = includeIndiaRaw === undefined
             ? false
             : String(includeIndiaRaw).trim().toLowerCase() === 'true';
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 120, 10), 300);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 10), 500);
 
         if (scope === 'portfolio') {
             if (!req.user?.userId) {
@@ -284,7 +285,7 @@ router.get('/:symbol', async (req, res) => {
             },
             wss,
             articleCount,
-            signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral',
+            signal: classifySignal(wss),
             days,
             recentScores: scoresResult.rows
         });

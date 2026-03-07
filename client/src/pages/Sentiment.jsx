@@ -14,9 +14,10 @@ export default function Sentiment() {
     const toast = useToast();
     const { user } = useAuth();
     const effectiveScope = !user && scope === 'portfolio' ? 'market' : scope;
+    const resultLimit = effectiveScope === 'market' ? '250' : '200';
 
     useEffect(() => {
-        const params = new URLSearchParams({ days: timeframe, scope: effectiveScope, limit: '120' });
+        const params = new URLSearchParams({ days: timeframe, scope: effectiveScope, limit: resultLimit });
         params.set('includeIndia', String(includeIndia));
         apiRequest(`/sentiment?${params.toString()}`)
             .then(data => setSentiments(data.sentiments || []))
@@ -24,7 +25,7 @@ export default function Sentiment() {
                 toast(err.message || 'Failed to load sentiment data', 'error');
                 setSentiments([]);
             });
-    }, [timeframe, effectiveScope, includeIndia, toast]);
+    }, [timeframe, effectiveScope, includeIndia, resultLimit, toast]);
 
     useEffect(() => {
         if (!user && scope === 'portfolio') {
@@ -35,7 +36,7 @@ export default function Sentiment() {
     const handleRefresh = async () => {
         setSentiments(null); // trigger skeleton
         try {
-            const params = new URLSearchParams({ days: timeframe, scope: effectiveScope, limit: '120' });
+            const params = new URLSearchParams({ days: timeframe, scope: effectiveScope, limit: resultLimit });
             params.set('includeIndia', String(includeIndia));
             const data = await apiRequest(`/sentiment?${params.toString()}`);
             setSentiments(data.sentiments || []);
@@ -114,7 +115,11 @@ export default function Sentiment() {
                                         .sort((a, b) => {
                                             const aHasData = a.hasData !== false;
                                             const bHasData = b.hasData !== false;
-                                            return Number(bHasData) - Number(aHasData);
+                                            if (aHasData !== bHasData) return Number(bHasData) - Number(aHasData);
+                                            const aArticles = Number(a.articles ?? a.articleCount ?? 0);
+                                            const bArticles = Number(b.articles ?? b.articleCount ?? 0);
+                                            if (aArticles !== bArticles) return bArticles - aArticles;
+                                            return Math.abs(Number(b.wss ?? 0)) - Math.abs(Number(a.wss ?? 0));
                                         })
                                         .map((s, i) => {
                                         const articleCount = (s.articles ?? s.articleCount ?? 0);
