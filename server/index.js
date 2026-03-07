@@ -46,12 +46,22 @@ app.use(helmet({
 }));
 
 // Rate limiting
-const limiter = rateLimit({
+const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: { error: 'Too many requests, please try again later.' }
+    max: 100, // stricter limit for auth-sensitive endpoints
+    message: { error: 'Too many authentication requests, please try again later.' }
 });
-app.use('/api/', limiter);
+
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // broader API budget for authenticated app usage
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => req.path.startsWith('/auth') || req.path.startsWith('/2fa'),
+});
+
+app.use('/api/auth', authLimiter);
+app.use('/api/2fa', authLimiter);
+app.use('/api', apiLimiter);
 
 // CORS configuration
 const allowedOrigins = process.env.FRONTEND_URL

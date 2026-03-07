@@ -9,9 +9,34 @@ export async function apiRequest(endpoint, options = {}) {
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    let res;
+    try {
+        res = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw error;
+        }
+        const networkError = new Error('Network error. Please try again.');
+        networkError.status = 0;
+        networkError.code = 'NETWORK_ERROR';
+        throw networkError;
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+    const data = isJson
+        ? await res.json().catch(() => ({}))
+        : { error: await res.text().catch(() => '') };
+
+    if (!res.ok) {
+        const err = new Error(data?.error || data?.message || `Request failed (${res.status})`);
+        err.status = res.status;
+        err.statusText = res.statusText;
+        err.code = data?.code;
+        err.details = data?.details;
+        err.payload = data;
+        throw err;
+    }
     return data;
 }
 

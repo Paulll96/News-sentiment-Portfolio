@@ -84,6 +84,26 @@ function parseHoldingsCsv(text) {
     return rows;
 }
 
+function extractPortfolioErrorMessage(error, fallback = 'Request failed') {
+    const details = Array.isArray(error?.details) ? error.details : [];
+    const avgCostIssue = details.find(d => d?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || d?.field === 'avgCost');
+
+    if (error?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || avgCostIssue) {
+        const symbol = avgCostIssue?.symbol ? ` for ${avgCostIssue.symbol}` : '';
+        return `Live quote unavailable${symbol}. Enter Avg Buy Price and try again.`;
+    }
+
+    return error?.message || fallback;
+}
+
+function formatRejectedImportRow(row, idx) {
+    const label = row?.symbol || `Row ${row?.row || idx + 1}`;
+    if (row?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || row?.field === 'avgCost') {
+        return `${label}: Live quote unavailable. Add avg_cost in CSV and retry.`;
+    }
+    return `${label}: ${row?.error || 'Invalid row'}`;
+}
+
 export default function Portfolio() {
     const { user } = useAuth();
     const toast = useToast();
@@ -129,24 +149,39 @@ export default function Portfolio() {
     }, [user]);
 
     useEffect(() => {
-        if (!searchQuery.trim()) {
+        const query = searchQuery.trim();
+        if (!query) {
             setSearchResults([]);
+            setSearchLoading(false);
             return;
         }
+
+        const controller = new AbortController();
 
         const timer = setTimeout(async () => {
             try {
                 setSearchLoading(true);
-                const data = await apiRequest(`/stocks/search?q=${encodeURIComponent(searchQuery)}&exchange=NSE&limit=8`);
+                const data = await apiRequest(
+                    `/stocks/search?q=${encodeURIComponent(query)}&exchange=NSE&limit=8`,
+                    { signal: controller.signal }
+                );
                 setSearchResults(data.results || []);
-            } catch {
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
                 setSearchResults([]);
             } finally {
-                setSearchLoading(false);
+                if (!controller.signal.aborted) {
+                    setSearchLoading(false);
+                }
             }
-        }, 250);
+        }, 300);
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
     }, [searchQuery]);
 
     const handleInit = async () => {
@@ -262,7 +297,7 @@ export default function Portfolio() {
             setAddAvgCost('');
             await loadPortfolio();
         } catch (e) {
-            toast(e.message || 'Failed to add holding', 'error');
+            toast(extractPortfolioErrorMessage(e, 'Failed to add holding'), 'error');
         } finally {
             setLoading(false);
         }
@@ -313,7 +348,7 @@ export default function Portfolio() {
             setImportPreview(result);
             toast('Import preview generated', 'success');
         } catch (e) {
-            toast(e.message || 'Import preview failed', 'error');
+            toast(extractPortfolioErrorMessage(e, 'Import preview failed'), 'error');
         } finally {
             setImportLoading(false);
         }
@@ -344,7 +379,7 @@ export default function Portfolio() {
             setTrades([]);
             await loadPortfolio();
         } catch (e) {
-            toast(e.message || 'Import failed', 'error');
+            toast(extractPortfolioErrorMessage(e, 'Import failed'), 'error');
         } finally {
             setImportLoading(false);
         }
@@ -564,7 +599,7 @@ export default function Portfolio() {
                                     <div className="portfolio-import-errors">
                                         {importPreview.rejectedRows.slice(0, 6).map((row, idx) => (
                                             <div key={idx} className="portfolio-import-error-row">
-                                                {row.symbol || `Row ${row.row || idx + 1}`}: {row.error}
+                                                {formatRejectedImportRow(row, idx)}
                                             </div>
                                         ))}
                                     </div>

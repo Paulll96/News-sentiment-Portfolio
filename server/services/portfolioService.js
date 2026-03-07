@@ -323,6 +323,8 @@ async function evaluateHoldingRows(rawRows, options = {}) {
                 symbol: row.symbol,
                 exchange: row.exchange,
                 error: 'No quote available and avgCost missing',
+                code: 'AVG_COST_REQUIRED_NO_QUOTE',
+                field: 'avgCost'
             });
             continue;
         }

@@ -13,7 +13,13 @@ export function AuthProvider({ children }) {
         if (token) {
             apiRequest('/auth/me')
                 .then(data => setUser(data.user))
-                .catch(() => localStorage.removeItem('token'))
+                .catch((error) => {
+                    // Only clear auth on definitive auth failures.
+                    if (error?.status === 401 || error?.status === 403) {
+                        localStorage.removeItem('token');
+                        setUser(null);
+                    }
+                })
                 .finally(() => setLoading(false));
         } else {
             setLoading(false);
