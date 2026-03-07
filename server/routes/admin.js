@@ -82,7 +82,7 @@ router.get('/users/:id', async (req, res) => {
         const portfolioResult = await query(
             `SELECT COUNT(*) as holdings_count, 
                     COALESCE(SUM(current_value), 0) as total_value
-             FROM holdings WHERE user_id = $1`,
+             FROM portfolio_holdings WHERE user_id = $1`,
             [id]
         );
 
@@ -116,7 +116,7 @@ router.put('/users/:id', async (req, res) => {
         }
 
         // Prevent self-demotion (admin can't remove their own admin role)
-        if (parseInt(id) === req.user.userId && role === 'user') {
+        if (id === req.user.userId && role === 'user') {
             return res.status(400).json({ error: 'Cannot remove your own admin privileges' });
         }
 
@@ -173,7 +173,7 @@ router.delete('/users/:id', async (req, res) => {
         const { id } = req.params;
 
         // Prevent self-deletion
-        if (parseInt(id) === req.user.userId) {
+        if (id === req.user.userId) {
             return res.status(400).json({ error: 'Cannot delete your own account' });
         }
 

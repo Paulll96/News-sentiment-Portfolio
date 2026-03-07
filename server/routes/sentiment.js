@@ -4,8 +4,13 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken, optionalAuth } = require('../middleware/auth');
-const { getAllStockSentiments, analyzeUnprocessedArticles, calculateWSS } = require('../services/sentimentService');
+const { authenticateToken, optionalAuth, requireAdmin } = require('../middleware/auth');
+const {
+    getAllStockSentiments,
+    getStockSentimentsBySymbols,
+    analyzeUnprocessedArticles,
+    calculateWSS
+} = require('../services/sentimentService');
 
 const router = express.Router();
 
@@ -15,15 +20,72 @@ const router = express.Router();
  */
 router.get('/', optionalAuth, async (req, res) => {
     try {
-        const sentiments = await getAllStockSentiments();
+        const days = parseInt(req.query.days) || 7;
+        const scope = String(req.query.scope || 'market').trim().toLowerCase();
 
-        // Free tier: limit to 5 stocks
-        const limit = req.user?.tier === 'pro' ? sentiments.length : 5;
+        if (scope === 'portfolio') {
+            if (!req.user?.userId) {
+                return res.status(401).json({ error: 'Authentication required for portfolio scope' });
+            }
+
+            const holdingsResult = await query(
+                `SELECT DISTINCT s.symbol
+                 FROM portfolio_holdings ph
+                 JOIN stocks s ON ph.stock_id = s.id
+                 WHERE ph.user_id = $1`,
+                [req.user.userId]
+            );
+
+            const heldSymbols = [...new Set(
+                holdingsResult.rows
+                    .map(r => String(r.symbol || '').trim().toUpperCase())
+                    .filter(Boolean)
+            )];
+
+            if (heldSymbols.length === 0) {
+                return res.json({
+                    sentiments: [],
+                    total: 0,
+                    limited: false,
+                    scope: 'portfolio',
+                    updated_at: new Date().toISOString()
+                });
+            }
+
+            const sentiments = await getStockSentimentsBySymbols(heldSymbols, days);
+            const bySymbol = new Map(sentiments.map(s => [s.symbol, s]));
+
+            const portfolioSentiments = heldSymbols.map(symbol => {
+                const found = bySymbol.get(symbol);
+                if (found) return found;
+                return {
+                    symbol,
+                    name: symbol,
+                    wss: 0,
+                    articleCount: 0,
+                    signal: 'neutral'
+                };
+            });
+
+            return res.json({
+                sentiments: portfolioSentiments,
+                total: portfolioSentiments.length,
+                limited: false,
+                scope: 'portfolio',
+                updated_at: new Date().toISOString()
+            });
+        }
+
+        const sentiments = await getAllStockSentiments(days);
+
+        // Free tier: limit to 5 stocks; pro and enterprise get full access
+        const limit = (req.user?.tier === 'pro' || req.user?.tier === 'enterprise') ? sentiments.length : 5;
 
         res.json({
             sentiments: sentiments.slice(0, limit),
             total: sentiments.length,
             limited: limit < sentiments.length,
+            scope: 'market',
             updated_at: new Date().toISOString()
         });
     } catch (error) {
@@ -86,7 +148,7 @@ router.get('/:symbol', async (req, res) => {
  * POST /api/sentiment/analyze
  * Trigger sentiment analysis for unprocessed articles
  */
-router.post('/analyze', authenticateToken, async (req, res) => {
+router.post('/analyze', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const analyzed = await analyzeUnprocessedArticles();
         res.json({
@@ -114,9 +176,9 @@ router.get('/history/:symbol', async (req, res) => {
              FROM daily_sentiment ds
              JOIN stocks s ON ds.stock_id = s.id
              WHERE s.symbol = $1
-             AND ds.date >= CURRENT_DATE - INTERVAL '${days} days'
+             AND ds.date >= CURRENT_DATE - ($2 || ' days')::interval
              ORDER BY ds.date ASC`,
-            [symbol.toUpperCase()]
+            [symbol.toUpperCase(), String(days)]
         );
 
         res.json({

@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -57,9 +57,9 @@ router.put('/profile', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/users/upgrade
- * Upgrade to Pro tier (mock)
+ * Upgrade user to Pro tier (admin-only until payment integration is added)
  */
-router.post('/upgrade', authenticateToken, async (req, res) => {
+router.post('/upgrade', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await query(
             `UPDATE users SET tier = 'pro', updated_at = CURRENT_TIMESTAMP

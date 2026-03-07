@@ -6,6 +6,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { query } = require('../db');
+const { scrapeStocktwits } = require('./stocktwitsScraper');
 
 // Stock symbol to company name mapping for entity detection
 const STOCK_KEYWORDS = {
@@ -193,24 +194,27 @@ async function saveArticles(articles) {
 async function runAllScrapers() {
     console.log('\n🔄 Starting news scraping...\n');
 
-    const [newsApiArticles, yahooArticles, redditArticles] = await Promise.all([
+    const [newsApiArticles, yahooArticles, redditArticles, stocktwitsArticles] = await Promise.all([
         scrapeNewsAPI(),
         scrapeYahooFinance(),
-        scrapeReddit()
+        scrapeReddit(),
+        scrapeStocktwits()
     ]);
 
-    const allArticles = [...newsApiArticles, ...yahooArticles, ...redditArticles];
+    const allArticles = [...newsApiArticles, ...yahooArticles, ...redditArticles, ...stocktwitsArticles];
     console.log(`\n📊 Total articles scraped: ${allArticles.length}`);
 
     const saved = await saveArticles(allArticles);
 
     return {
         total: allArticles.length,
-        saved,
+        new_articles: saved,
+        analyzed_articles: 0,  // Scraper only saves — analysis happens in cron pipeline
         sources: {
             newsapi: newsApiArticles.length,
             yahoo_finance: yahooArticles.length,
-            reddit: redditArticles.length
+            reddit: redditArticles.length,
+            stocktwits: stocktwitsArticles.length
         }
     };
 }
@@ -219,6 +223,7 @@ module.exports = {
     scrapeNewsAPI,
     scrapeYahooFinance,
     scrapeReddit,
+    scrapeStocktwits,
     detectStockMentions,
     saveArticles,
     runAllScrapers,

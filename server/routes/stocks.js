@@ -4,7 +4,8 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { searchInstruments, syncInstrumentMaster } = require('../services/instrumentService');
 
 const router = express.Router();
 
@@ -33,6 +34,33 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/stocks/search
+ * Search NSE instrument master for add/import flows
+ */
+router.get('/search', async (req, res) => {
+    try {
+        const q = String(req.query.q || '').trim();
+        const exchange = String(req.query.exchange || 'NSE').toUpperCase();
+        const limit = parseInt(req.query.limit, 10) || 20;
+
+        if (!q || q.length < 1) {
+            return res.status(400).json({ error: 'Query parameter "q" is required' });
+        }
+
+        const results = await searchInstruments(q, exchange, limit);
+
+        res.json({
+            results,
+            exchange,
+            count: results.length,
+        });
+    } catch (error) {
+        console.error('Search stocks error:', error);
+        res.status(500).json({ error: 'Failed to search stocks' });
+    }
+});
+
+/**
  * GET /api/stocks/:symbol
  * Get specific stock details
  */
@@ -57,10 +85,27 @@ router.get('/:symbol', async (req, res) => {
 });
 
 /**
+ * POST /api/stocks/sync-instruments
+ * Admin-only manual instrument sync
+ */
+router.post('/sync-instruments', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await syncInstrumentMaster();
+        res.json({
+            message: 'Instrument sync complete',
+            ...result,
+        });
+    } catch (error) {
+        console.error('Sync instruments error:', error);
+        res.status(500).json({ error: 'Failed to sync instrument master' });
+    }
+});
+
+/**
  * POST /api/stocks
  * Add a new stock to track
  */
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { symbol, name, sector } = req.body;
 
