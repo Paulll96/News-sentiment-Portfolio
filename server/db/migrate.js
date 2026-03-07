@@ -176,6 +176,10 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE sentiment_scores ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'finbert';
 -- Backward-safe migration: add role column to existing users tables
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tier VARCHAR(20) DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT;
 -- Backward-safe migration: extend symbol length + stock metadata
 ALTER TABLE stocks ALTER COLUMN symbol TYPE VARCHAR(24);
 ALTER TABLE stocks ADD COLUMN IF NOT EXISTS exchange VARCHAR(16) DEFAULT 'US';
