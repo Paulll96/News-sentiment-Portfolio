@@ -24,7 +24,7 @@ router.get('/users', async (req, res) => {
         const search = req.query.search;
 
         let queryText = `
-            SELECT id, email, name, tier, role, created_at, last_login
+            SELECT id, email, name, role, created_at, last_login
             FROM users
         `;
         const params = [];
@@ -69,7 +69,7 @@ router.get('/users/:id', async (req, res) => {
         const { id } = req.params;
 
         const result = await query(
-            `SELECT id, email, name, tier, role, created_at, last_login
+            `SELECT id, email, name, role, created_at, last_login
              FROM users WHERE id = $1`,
             [id]
         );
@@ -98,21 +98,16 @@ router.get('/users/:id', async (req, res) => {
 
 /**
  * PUT /api/admin/users/:id
- * Update user (role, tier)
+ * Update user (role/name)
  */
 router.put('/users/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { role, tier, name } = req.body;
+        const { role, name } = req.body;
 
         // Validate role
         if (role && !['user', 'admin'].includes(role)) {
             return res.status(400).json({ error: 'Invalid role. Must be "user" or "admin"' });
-        }
-
-        // Validate tier
-        if (tier && !['free', 'pro', 'enterprise'].includes(tier)) {
-            return res.status(400).json({ error: 'Invalid tier. Must be "free", "pro", or "enterprise"' });
         }
 
         // Prevent self-demotion (admin can't remove their own admin role)
@@ -129,10 +124,6 @@ router.put('/users/:id', async (req, res) => {
             updates.push(`role = $${paramIndex++}`);
             params.push(role);
         }
-        if (tier) {
-            updates.push(`tier = $${paramIndex++}`);
-            params.push(tier);
-        }
         if (name !== undefined) {
             updates.push(`name = $${paramIndex++}`);
             params.push(name);
@@ -146,7 +137,7 @@ router.put('/users/:id', async (req, res) => {
         const result = await query(
             `UPDATE users SET ${updates.join(', ')} 
              WHERE id = $${paramIndex}
-             RETURNING id, email, name, tier, role`,
+             RETURNING id, email, name, role`,
             params
         );
 

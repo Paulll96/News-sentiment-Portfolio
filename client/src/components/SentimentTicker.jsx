@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ShinyText from './ReactBits/ShinyText';
 import { apiRequest } from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 
 function TickerItems({ data }) {
     return data.map((t, i) => {
@@ -18,19 +19,30 @@ function TickerItems({ data }) {
 
 export default function SentimentTicker() {
     const [tickerData, setTickerData] = useState([]);
+    const { user } = useAuth();
 
     useEffect(() => {
-        apiRequest('/sentiment')
+        const params = new URLSearchParams({
+            scope: user ? 'portfolio' : 'market',
+            days: '7',
+        });
+
+        apiRequest(`/sentiment?${params.toString()}`)
             .then(data => {
                 if (data.sentiments && data.sentiments.length > 0) {
                     setTickerData(data.sentiments.map(s => ({
                         symbol: s.symbol,
                         value: s.wss || 0
                     })));
+                } else {
+                    setTickerData([]);
                 }
             })
-            .catch(() => { /* Ticker is non-critical, fail silently */ });
-    }, []);
+            .catch(() => {
+                // Ticker is non-critical, fail silently
+                setTickerData([]);
+            });
+    }, [user]);
 
     if (tickerData.length === 0) return null;
 

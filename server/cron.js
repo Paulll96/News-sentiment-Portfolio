@@ -97,10 +97,10 @@ async function generateNotifications(scrapeResult) {
             console.log(`🔔 Generated notifications for ${extremes.rows.length} notable stocks.`);
         }
 
-        // Notify pro users about scrape completion
+        // Notify all users about scrape completion
         if (scrapeResult && scrapeResult.new_articles > 0) {
-            const proUsers = await query("SELECT id FROM users WHERE tier IN ('pro', 'enterprise')");
-            for (const user of proUsers.rows) {
+            const allUsers = await query('SELECT id FROM users');
+            for (const user of allUsers.rows) {
                 await query(`
                     INSERT INTO notifications (user_id, type, title, message)
                     VALUES ($1, 'scrape_complete', '🗞️ Pipeline complete',

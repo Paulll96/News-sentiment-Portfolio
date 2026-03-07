@@ -1,19 +1,14 @@
 /**
- * Stocktwits Scraper — Free social sentiment source
- * Scrapes public sentiment data from Stocktwits API (no auth required for public endpoints)
- * Replaces the Twitter/X scraper (which costs $100+/mo)
+ * Stocktwits scraper.
+ * Pulls public messages for tracked symbols and feeds them into the news pipeline.
  */
 
 const axios = require('axios');
+const { query } = require('../db');
 
-// Stocktwits public API base
 const STOCKTWITS_API = 'https://api.stocktwits.com/api/2';
+const DEFAULT_SYMBOLS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'V', 'JNJ'];
 
-/**
- * Fetch public sentiment stream for a stock symbol from Stocktwits
- * @param {string} symbol - Stock ticker symbol (e.g., 'AAPL')
- * @returns {Object[]} Array of article-like objects for the scraper pipeline
- */
 async function fetchStocktwitsStream(symbol) {
     try {
         const response = await axios.get(`${STOCKTWITS_API}/streams/symbol/${symbol}.json`, {
@@ -23,60 +18,75 @@ async function fetchStocktwitsStream(symbol) {
             },
         });
 
-        if (!response.data || !response.data.messages) {
-            return [];
-        }
-
-        const messages = response.data.messages;
-
+        const messages = response.data?.messages || [];
         return messages.map(msg => ({
             source: 'stocktwits',
-            title: msg.body.substring(0, 200), // Use as "title" for sentiment analysis
-            content: msg.body,
+            title: String(msg.body || '').substring(0, 200),
+            content: msg.body || null,
             url: `https://stocktwits.com/${msg.user?.username}/message/${msg.id}`,
             published_at: msg.created_at,
-            // Stocktwits has its own sentiment labels
             stocktwits_sentiment: msg.entities?.sentiment?.basic || null,
         }));
     } catch (error) {
         if (error.response?.status === 429) {
-            console.log(`⚠️  Stocktwits rate limited for ${symbol}, skipping`);
-        } else {
-            console.error(`⚠️  Stocktwits fetch failed for ${symbol}:`, error.message);
+            console.log(`Stocktwits rate limited for ${symbol}, skipping`);
+        } else if (error.response?.status !== 404 && error.response?.status !== 403) {
+            console.error(`Stocktwits fetch failed for ${symbol}:`, error.message);
         }
         return [];
     }
 }
 
-/**
- * Scrape Stocktwits for all tracked symbols
- * Respects rate limits by adding a small delay between requests
- */
+async function getSymbolsToScrape() {
+    try {
+        const result = await query(
+            `SELECT symbol
+             FROM stocks
+             WHERE is_active = true
+             ORDER BY exchange, symbol
+             LIMIT 30`
+        );
+
+        const symbols = new Set();
+        for (const row of result.rows) {
+            const symbol = String(row.symbol || '').trim().toUpperCase();
+            if (!symbol) continue;
+            symbols.add(symbol);
+            // Try bare form for NSE tickers too (e.g., RELIANCE from RELIANCE.NS)
+            if (symbol.endsWith('.NS')) {
+                symbols.add(symbol.slice(0, -3));
+            }
+        }
+
+        const dynamic = [...symbols].slice(0, 30);
+        return dynamic.length > 0 ? dynamic : DEFAULT_SYMBOLS;
+    } catch (error) {
+        console.warn(`Stocktwits symbol query failed, using defaults: ${error.message}`);
+        return DEFAULT_SYMBOLS;
+    }
+}
+
 async function scrapeStocktwits() {
-    const symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'V', 'JNJ'];
+    const symbols = await getSymbolsToScrape();
     const allMessages = [];
 
-    console.log(`📱 Scraping Stocktwits for ${symbols.length} symbols...`);
+    console.log(`Scraping Stocktwits for ${symbols.length} symbols...`);
 
-    for (const symbol of symbols) {
+    for (let i = 0; i < symbols.length; i++) {
+        const symbol = symbols[i];
         const messages = await fetchStocktwitsStream(symbol);
         allMessages.push(...messages);
 
-        // Rate limit: 200 req/hour = ~5.5s between requests. Use 3s for safety.
-        if (symbols.indexOf(symbol) < symbols.length - 1) {
+        // Keep below Stocktwits free-rate limits.
+        if (i < symbols.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 3000));
         }
     }
 
-    console.log(`📱 Stocktwits: Found ${allMessages.length} messages across ${symbols.length} symbols`);
+    console.log(`Stocktwits: found ${allMessages.length} messages across ${symbols.length} symbols`);
     return allMessages;
 }
 
-/**
- * Get Stocktwits sentiment summary for a symbol (for real-time display)
- * @param {string} symbol - Stock ticker
- * @returns {Object} Sentiment summary { bullish, bearish, total, bullishPercent }
- */
 async function getStocktwitsSentiment(symbol) {
     try {
         const response = await axios.get(`${STOCKTWITS_API}/streams/symbol/${symbol}.json`, {
@@ -85,7 +95,8 @@ async function getStocktwitsSentiment(symbol) {
         });
 
         const messages = response.data?.messages || [];
-        let bullish = 0, bearish = 0;
+        let bullish = 0;
+        let bearish = 0;
 
         messages.forEach(msg => {
             const sentiment = msg.entities?.sentiment?.basic;
@@ -102,7 +113,7 @@ async function getStocktwitsSentiment(symbol) {
             bullishPercent: total > 0 ? ((bullish / total) * 100).toFixed(1) : null,
             messageCount: messages.length,
         };
-    } catch (error) {
+    } catch {
         return { symbol, bullish: 0, bearish: 0, total: 0, bullishPercent: null, messageCount: 0 };
     }
 }

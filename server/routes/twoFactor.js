@@ -150,7 +150,7 @@ router.post('/validate', async (req, res) => {
         const userId = decoded.userId;
 
         const user = await query(
-            'SELECT id, email, name, tier, role, totp_secret, totp_enabled, totp_backup_codes FROM users WHERE id = $1',
+            'SELECT id, email, name, role, totp_secret, totp_enabled, totp_backup_codes FROM users WHERE id = $1',
             [userId]
         );
 
@@ -184,7 +184,7 @@ router.post('/validate', async (req, res) => {
 
         // 2FA passed — issue full session token
         const token = jwt.sign(
-            { userId: u.id, email: u.email, tier: u.tier, role: u.role || 'user' },
+            { userId: u.id, email: u.email, role: u.role || 'user' },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
@@ -196,7 +196,7 @@ router.post('/validate', async (req, res) => {
                 id: u.id,
                 email: u.email,
                 name: u.name,
-                tier: u.tier,
+                role: u.role || 'user',
             },
         });
     } catch (error) {

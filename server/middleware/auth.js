@@ -49,23 +49,6 @@ const optionalAuth = (req, res, next) => {
 };
 
 /**
- * Require Pro tier subscription
- */
-const requirePro = (req, res, next) => {
-    if (!req.user) {
-        return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    if (req.user.tier !== 'pro' && req.user.tier !== 'enterprise') {
-        return res.status(403).json({
-            error: 'Pro subscription required',
-            upgrade_url: '/pricing'
-        });
-    }
-    next();
-};
-
-/**
  * Require Admin role
  */
 const requireAdmin = (req, res, next) => {
@@ -85,6 +68,5 @@ const requireAdmin = (req, res, next) => {
 module.exports = {
     authenticateToken,
     optionalAuth,
-    requirePro,
     requireAdmin
 };

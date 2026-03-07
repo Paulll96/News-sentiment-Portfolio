@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { query } = require('../db');
-const { authenticateToken, requirePro } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 

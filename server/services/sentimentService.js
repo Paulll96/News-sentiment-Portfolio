@@ -136,22 +136,128 @@ function getMockSentiment(text) {
     };
 }
 
+function normalizeCompanyNameForMatch(name) {
+    return String(name || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9&\s]/g, ' ')
+        .replace(/\b(limited|ltd|incorporated|inc|corporation|corp|company|co|plc|holdings?)\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildNameAliases(stocks) {
+    const aliases = [];
+
+    for (const stock of stocks || []) {
+        const symbol = String(stock.symbol || '').trim().toUpperCase();
+        if (!symbol) continue;
+
+        const fullName = normalizeCompanyNameForMatch(stock.name);
+        if (fullName.length >= 4) {
+            aliases.push({ symbol, alias: fullName });
+        }
+
+        const compact = fullName.split(' ').slice(0, 2).join(' ').trim();
+        if (compact.length >= 4 && compact !== fullName) {
+            aliases.push({ symbol, alias: compact });
+        }
+    }
+
+    return aliases;
+}
+
+function resolveStockMentions(text, nameAliases) {
+    const normalizedText = normalizeCompanyNameForMatch(text);
+    const mentions = new Set(detectStockMentions(text));
+
+    for (const entry of nameAliases || []) {
+        if (entry.alias && normalizedText.includes(entry.alias)) {
+            mentions.add(entry.symbol);
+        }
+    }
+
+    return [...mentions];
+}
+
+function isIndiaMarketNews(text) {
+    const t = String(text || '').toLowerCase();
+    return (
+        t.includes('nifty') ||
+        t.includes('nifty50') ||
+        t.includes('sensex') ||
+        t.includes('nse') ||
+        t.includes('bse') ||
+        t.includes('bank nifty') ||
+        t.includes('midcap') ||
+        t.includes('smallcap') ||
+        t.includes('rupee') ||
+        t.includes('india equities') ||
+        t.includes('indian stock') ||
+        t.includes('india market')
+    );
+}
+
+function normalizeSymbols(symbols = []) {
+    return [...new Set(
+        (symbols || [])
+            .map(s => String(s || '').trim().toUpperCase())
+            .filter(Boolean)
+    )];
+}
+
 /**
  * Analyze all unprocessed articles
  */
 async function analyzeUnprocessedArticles() {
     console.log('\n🧠 Analyzing unprocessed articles...\n');
 
-    // Get unprocessed articles
+    // Get pending articles plus processed articles that never received any score.
     const result = await query(
-        `SELECT id, title, content FROM news_articles 
-         WHERE processed = false 
-         ORDER BY scraped_at DESC 
-         LIMIT 50`
+        `SELECT na.id, na.title, na.content
+         FROM news_articles na
+         WHERE na.processed = false
+            OR (
+                na.processed = true
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM sentiment_scores ss
+                    WHERE ss.article_id = na.id
+                )
+            )
+         ORDER BY na.scraped_at DESC
+         LIMIT 100`
     );
 
     const articles = result.rows;
     console.log(`📰 Found ${articles.length} unprocessed articles`);
+
+    const trackedStocksResult = await query(
+        'SELECT symbol, name, exchange FROM stocks WHERE is_active = true'
+    );
+    const trackedStocks = trackedStocksResult.rows;
+    const nameAliases = buildNameAliases(trackedStocks);
+    const stockMetaBySymbol = new Map(
+        trackedStocks.map(row => [
+            String(row.symbol || '').trim().toUpperCase(),
+            { exchange: String(row.exchange || '').trim().toUpperCase() }
+        ])
+    );
+    const trackedNseSymbols = trackedStocks
+        .filter(row => String(row.exchange || '').toUpperCase() === 'NSE')
+        .map(row => String(row.symbol || '').trim().toUpperCase())
+        .filter(Boolean);
+    const heldNseResult = await query(
+        `SELECT s.symbol, COUNT(*)::int AS holders
+         FROM portfolio_holdings ph
+         JOIN stocks s ON s.id = ph.stock_id
+         WHERE s.exchange = 'NSE'
+         GROUP BY s.symbol
+         ORDER BY holders DESC, s.symbol`
+    );
+    const heldNseSymbols = normalizeSymbols(heldNseResult.rows.map(r => r.symbol));
+    const prioritizedNseSymbols = heldNseSymbols.length > 0
+        ? normalizeSymbols([...heldNseSymbols, ...trackedNseSymbols])
+        : normalizeSymbols(trackedNseSymbols);
 
     let analyzed = 0;
 
@@ -165,13 +271,25 @@ async function analyzeUnprocessedArticles() {
             // Get sentiment
             const sentiment = await analyzeSentiment(text);
 
-            // Detect stock mentions
-            const stockSymbols = detectStockMentions(text);
+            // Detect stock mentions from ticker patterns and company-name aliases.
+            let stockSymbols = normalizeSymbols(resolveStockMentions(text, nameAliases));
+            const indiaMacro = isIndiaMarketNews(text);
+
+            if (indiaMacro) {
+                // India-market headlines should map to NSE symbols only.
+                const nseMentions = stockSymbols.filter(symbol => stockMetaBySymbol.get(symbol)?.exchange === 'NSE');
+                if (nseMentions.length > 0) {
+                    stockSymbols = nseMentions;
+                } else {
+                    // No direct NSE mention: use prioritized held NSE symbols as proxy coverage.
+                    stockSymbols = prioritizedNseSymbols.slice(0, 12);
+                }
+            }
 
             // Get stock IDs
             if (stockSymbols.length > 0) {
                 const stockResult = await query(
-                    'SELECT id, symbol FROM stocks WHERE symbol = ANY($1)',
+                    'SELECT id, symbol FROM stocks WHERE symbol = ANY($1::text[])',
                     [stockSymbols]
                 );
 
@@ -180,7 +298,11 @@ async function analyzeUnprocessedArticles() {
                     await query(
                         `INSERT INTO sentiment_scores 
                          (article_id, stock_id, sentiment, confidence, raw_score, source)
-                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                         SELECT $1, $2, $3, $4, $5, $6
+                         WHERE NOT EXISTS (
+                            SELECT 1 FROM sentiment_scores
+                            WHERE article_id = $1 AND stock_id = $2
+                         )`,
                         [article.id, stock.id, sentiment.sentiment, sentiment.confidence, sentiment.raw_score, sentiment.source || 'unknown']
                     );
                 }
@@ -251,7 +373,11 @@ async function calculateWSS(stockId, days = 7) {
  * Get sentiment summary for all stocks
  */
 async function getAllStockSentiments(days = 7) {
-    const stocksResult = await query('SELECT id, symbol, name FROM stocks WHERE is_active = true');
+    const stocksResult = await query(
+        `SELECT id, symbol, name, exchange, country, currency
+         FROM stocks
+         WHERE is_active = true`
+    );
     const stocks = stocksResult.rows;
 
     const sentiments = [];
@@ -262,6 +388,9 @@ async function getAllStockSentiments(days = 7) {
         sentiments.push({
             symbol: stock.symbol,
             name: stock.name,
+            exchange: stock.exchange,
+            country: stock.country,
+            currency: stock.currency,
             wss,
             articleCount,
             signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral'
@@ -285,7 +414,9 @@ async function getStockSentimentsBySymbols(symbols = [], days = 7) {
     if (normalized.length === 0) return [];
 
     const stocksResult = await query(
-        'SELECT id, symbol, name FROM stocks WHERE symbol = ANY($1::text[])',
+        `SELECT id, symbol, name, exchange, country, currency
+         FROM stocks
+         WHERE symbol = ANY($1::text[])`,
         [normalized]
     );
 
@@ -296,6 +427,9 @@ async function getStockSentimentsBySymbols(symbols = [], days = 7) {
         sentiments.push({
             symbol: stock.symbol,
             name: stock.name,
+            exchange: stock.exchange,
+            country: stock.country,
+            currency: stock.currency,
             wss,
             articleCount,
             signal: wss > 0.2 ? 'bullish' : wss < -0.2 ? 'bearish' : 'neutral'

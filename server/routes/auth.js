@@ -32,7 +32,7 @@ router.post('/register', async (req, res) => {
 
         // Create user (default role is 'user')
         const result = await query(
-            'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, tier, role, created_at',
+            'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role, created_at',
             [email, passwordHash, name || null, 'user']
         );
 
@@ -40,7 +40,7 @@ router.post('/register', async (req, res) => {
 
         // Generate JWT token (includes role for admin check)
         const token = jwt.sign(
-            { userId: user.id, email: user.email, tier: user.tier, role: user.role || 'user' },
+            { userId: user.id, email: user.email, role: user.role || 'user' },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
@@ -51,7 +51,7 @@ router.post('/register', async (req, res) => {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                tier: user.tier
+                role: user.role || 'user'
             },
             token
         });
@@ -75,7 +75,7 @@ router.post('/login', async (req, res) => {
 
         // Find user (include role + 2FA status)
         const result = await query(
-            'SELECT id, email, name, password_hash, tier, role, totp_enabled FROM users WHERE email = $1',
+            'SELECT id, email, name, password_hash, role, totp_enabled FROM users WHERE email = $1',
             [email]
         );
 
@@ -110,7 +110,7 @@ router.post('/login', async (req, res) => {
 
         // Generate JWT token (includes role for admin check)
         const token = jwt.sign(
-            { userId: user.id, email: user.email, tier: user.tier, role: user.role || 'user' },
+            { userId: user.id, email: user.email, role: user.role || 'user' },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
@@ -121,7 +121,6 @@ router.post('/login', async (req, res) => {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                tier: user.tier,
                 role: user.role || 'user'
             },
             token
@@ -139,7 +138,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticateToken, async (req, res) => {
     try {
         const result = await query(
-            'SELECT id, email, name, tier, created_at, last_login FROM users WHERE id = $1',
+            'SELECT id, email, name, created_at, last_login FROM users WHERE id = $1',
             [req.user.userId]
         );
 
