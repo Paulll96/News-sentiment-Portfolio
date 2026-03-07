@@ -13,6 +13,24 @@ const CONFIG = {
     quoteCacheMinutes: parseInt(process.env.QUOTE_CACHE_MINUTES || '5', 10),
 };
 
+const DEMO_SEEDED_SYMBOLS = [
+    'AAPL',
+    'MSFT',
+    'GOOGL',
+    'AMZN',
+    'TSLA',
+    'NVDA',
+    'META',
+    'JPM',
+    'V',
+    'JNJ',
+];
+
+const ADD_HOLDING_STRATEGIES = {
+    AUTO_REPLACE_DEMO: 'auto_replace_demo',
+    ADD_ONLY: 'add_only',
+};
+
 /**
  * Calculate target portfolio weights based on sentiment
  * @param {Array} sentiments - Array of {symbol, wss, articleCount, ...}
@@ -82,6 +100,18 @@ function normalizeSymbolForExchange(symbol, exchange) {
     if (!clean) return '';
     if (exchange === 'NSE') return ensureNseSymbolSuffix(clean);
     return clean;
+}
+
+function parseAddHoldingStrategy(strategy) {
+    const parsed = String(strategy || ADD_HOLDING_STRATEGIES.AUTO_REPLACE_DEMO).trim().toLowerCase();
+    if (parsed === ADD_HOLDING_STRATEGIES.AUTO_REPLACE_DEMO || parsed === ADD_HOLDING_STRATEGIES.ADD_ONLY) {
+        return parsed;
+    }
+    return null;
+}
+
+function pgBool(value) {
+    return value === true || value === 't' || value === 1 || value === '1';
 }
 
 function parseAndNormalizeHolding(raw, index = 0) {
@@ -392,7 +422,56 @@ async function calculatePortfolioValue(userId) {
     return holdings.reduce((total, h) => total + parseFloat(h.current_value || 0), 0);
 }
 
+async function isStrictDemoPortfolio(userId, client) {
+    const holdingsResult = await client.query(
+        `SELECT COUNT(*)::int AS holdings_count,
+                COALESCE(BOOL_AND(s.symbol = ANY($2::text[])), FALSE) AS all_seeded
+         FROM portfolio_holdings ph
+         JOIN stocks s ON ph.stock_id = s.id
+         WHERE ph.user_id = $1`,
+        [userId, DEMO_SEEDED_SYMBOLS]
+    );
+
+    const txResult = await client.query(
+        `SELECT COUNT(*)::int AS tx_count,
+                COALESCE(BOOL_AND(type = 'buy' AND reason = 'Initial portfolio allocation'), FALSE) AS all_initial_buys,
+                COUNT(*) FILTER (WHERE reason = 'Manual portfolio add')::int AS manual_add_count,
+                COUNT(*) FILTER (WHERE reason ILIKE 'Imported via%')::int AS import_count,
+                COUNT(*) FILTER (WHERE reason ILIKE 'Rebalance:%')::int AS rebalance_count
+         FROM transactions
+         WHERE user_id = $1`,
+        [userId]
+    );
+
+    const holdings = holdingsResult.rows[0] || {};
+    const tx = txResult.rows[0] || {};
+
+    const holdingsCount = parseInt(holdings.holdings_count || 0, 10);
+    const txCount = parseInt(tx.tx_count || 0, 10);
+
+    if (holdingsCount <= 0 || txCount <= 0) {
+        return false;
+    }
+
+    if (!pgBool(holdings.all_seeded) || !pgBool(tx.all_initial_buys)) {
+        return false;
+    }
+
+    const manualAdds = parseInt(tx.manual_add_count || 0, 10);
+    const imports = parseInt(tx.import_count || 0, 10);
+    const rebalances = parseInt(tx.rebalance_count || 0, 10);
+
+    return manualAdds === 0 && imports === 0 && rebalances === 0;
+}
+
 async function addHolding(userId, payload) {
+    const strategy = parseAddHoldingStrategy(payload?.strategy);
+    if (!strategy) {
+        return {
+            error: 'strategy must be one of: auto_replace_demo, add_only',
+        };
+    }
+
     const evaluation = await evaluateHoldingRows([payload], { createMissingStocks: true });
 
     if (evaluation.rejected.length > 0 || evaluation.accepted.length === 0) {
@@ -403,8 +482,24 @@ async function addHolding(userId, payload) {
     }
 
     const row = evaluation.accepted[0];
+    let demoHoldingsReplaced = false;
+    let replaceDecision = strategy === ADD_HOLDING_STRATEGIES.ADD_ONLY ? 'additive_forced' : 'additive_non_demo';
 
     await transaction(async (client) => {
+        if (strategy === ADD_HOLDING_STRATEGIES.AUTO_REPLACE_DEMO) {
+            const shouldReplaceDemo = await isStrictDemoPortfolio(userId, client);
+            if (shouldReplaceDemo) {
+                await client.query('DELETE FROM portfolio_holdings WHERE user_id = $1', [userId]);
+                await client.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
+                demoHoldingsReplaced = true;
+                replaceDecision = 'replaced_demo';
+            } else {
+                replaceDecision = 'additive_non_demo';
+            }
+        } else {
+            replaceDecision = 'additive_forced';
+        }
+
         const existing = await client.query(
             `SELECT id, shares, avg_cost
              FROM portfolio_holdings
@@ -468,8 +563,10 @@ async function addHolding(userId, payload) {
     const holding = holdings.find(h => h.symbol === row.symbol);
 
     return {
-        message: 'Holding added',
+        message: demoHoldingsReplaced ? 'Demo holdings replaced and holding added' : 'Holding added',
         holding,
+        demoHoldingsReplaced,
+        replaceDecision,
     };
 }
 
@@ -617,7 +714,7 @@ async function rebalancePortfolio(userId, dryRun = true) {
 }
 
 /**
- * Execute trades — creates explicit buy/sell transactions
+ * Execute trades - creates explicit buy/sell transactions
  */
 async function executeTrades(userId, trades, portfolioValue) {
     await transaction(async (client) => {

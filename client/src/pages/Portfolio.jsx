@@ -239,17 +239,22 @@ export default function Portfolio() {
 
         try {
             setLoading(true);
-            await apiRequest('/portfolio/holdings', {
+            const result = await apiRequest('/portfolio/holdings', {
                 method: 'POST',
                 body: JSON.stringify({
                     symbol: selectedStock.symbol,
                     exchange: selectedStock.exchange || 'NSE',
                     shares,
                     ...(avgCost ? { avgCost } : {}),
+                    strategy: 'auto_replace_demo',
                 }),
             });
 
-            toast(`${selectedStock.symbol} added to portfolio`, 'success');
+            if (result?.demoHoldingsReplaced) {
+                toast('Demo holdings replaced with your real portfolio start.', 'success');
+            } else {
+                toast(`${selectedStock.symbol} added to portfolio`, 'success');
+            }
             setSearchQuery('');
             setSearchResults([]);
             setSelectedStock(null);
@@ -484,6 +489,9 @@ export default function Portfolio() {
                                 <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={handleAddHolding} disabled={loading}>
                                     Add Holding
                                 </button>
+                                <p style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>
+                                    If your portfolio is still demo-only, first real add will replace demo data automatically.
+                                </p>
                             </div>
 
                             <div className="glass-card no-hover">

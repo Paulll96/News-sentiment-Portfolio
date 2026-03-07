@@ -2,27 +2,39 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiRequest } from '../utils/api';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { SkeletonTableRow } from '../components/Skeleton';
 import { exportSentiments } from '../utils/export';
 
 export default function Sentiment() {
     const [sentiments, setSentiments] = useState(null); // null = loading
     const [timeframe, setTimeframe] = useState('7');
+    const [scope, setScope] = useState('portfolio');
     const toast = useToast();
+    const { user } = useAuth();
+    const effectiveScope = !user && scope === 'portfolio' ? 'market' : scope;
 
     useEffect(() => {
-        apiRequest(`/sentiment?days=${timeframe}`)
+        const params = new URLSearchParams({ days: timeframe, scope: effectiveScope });
+        apiRequest(`/sentiment?${params.toString()}`)
             .then(data => setSentiments(data.sentiments || []))
             .catch(err => {
                 toast(err.message || 'Failed to load sentiment data', 'error');
                 setSentiments([]);
             });
-    }, [timeframe]);
+    }, [timeframe, effectiveScope, toast]);
+
+    useEffect(() => {
+        if (!user && scope === 'portfolio') {
+            setScope('market');
+        }
+    }, [user, scope]);
 
     const handleRefresh = async () => {
         setSentiments(null); // trigger skeleton
         try {
-            const data = await apiRequest('/sentiment');
+            const params = new URLSearchParams({ days: timeframe, scope: effectiveScope });
+            const data = await apiRequest(`/sentiment?${params.toString()}`);
             setSentiments(data.sentiments || []);
             toast('Sentiment data refreshed', 'success');
         } catch (err) {
@@ -47,9 +59,18 @@ export default function Sentiment() {
                         <option value="30">Last 30 Days</option>
                     </select>
                 </div>
-                <button className="btn btn-primary" onClick={handleRefresh}>🔄 Refresh</button>
+
+                <div className="form-group">
+                    <label>Scope</label>
+                    <select className="select-input" value={scope} onChange={e => setScope(e.target.value)}>
+                        {user && <option value="portfolio">My Holdings</option>}
+                        <option value="market">Market</option>
+                    </select>
+                </div>
+
+                <button className="btn btn-primary" onClick={handleRefresh}>Refresh</button>
                 {sentiments && sentiments.length > 0 && (
-                    <button className="btn btn-ghost" onClick={() => exportSentiments(sentiments)}>📥 Export CSV</button>
+                    <button className="btn btn-ghost" onClick={() => exportSentiments(sentiments)}>Export CSV</button>
                 )}
             </div>
 
@@ -71,7 +92,7 @@ export default function Sentiment() {
                                 {sentiments === null ? (
                                     Array.from({ length: 6 }).map((_, i) => <SkeletonTableRow key={i} />)
                                 ) : sentiments.length === 0 ? (
-                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No sentiment data yet — run a scrape first</td></tr>
+                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>{effectiveScope === 'portfolio' ? 'No holdings yet in your portfolio.' : 'No sentiment data yet - run a scrape first'}</td></tr>
                                 ) : (
                                     sentiments.map((s, i) => (
                                         <tr key={i}>
@@ -87,8 +108,8 @@ export default function Sentiment() {
                                                 {s.wss > 0 ? '+' : ''}{(s.wss ?? 0).toFixed(3)}
                                             </td>
                                             <td><span className={`signal-badge ${s.signal}`}>{s.signal}</span></td>
-                                            <td>{s.articles || s.articleCount || '—'}</td>
-                                            <td style={{ fontSize: 18 }}>{s.wss > 0 ? '📈' : s.wss < 0 ? '📉' : '➡️'}</td>
+                                            <td>{s.articles || s.articleCount || '-'}</td>
+                                            <td style={{ fontSize: 12, fontWeight: 700 }}>{s.wss > 0 ? 'UP' : s.wss < 0 ? 'DOWN' : 'FLAT'}</td>
                                         </tr>
                                     ))
                                 )}

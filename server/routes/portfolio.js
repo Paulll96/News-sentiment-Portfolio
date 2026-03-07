@@ -240,12 +240,20 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         const articlesResult = await query('SELECT COUNT(*) as total FROM news_articles WHERE processed = true');
         const totalArticles = parseInt(articlesResult.rows[0].total) || 0;
 
-        // 4. Sentiment heatmap (all stocks)
-        const { getAllStockSentiments } = require('../services/sentimentService');
-        const sentiments = await getAllStockSentiments();
-        const heatmap = sentiments.map(s => ({
-            symbol: s.symbol,
-            score: s.wss,
+        // 4. Sentiment heatmap (held symbols only)
+        const { getStockSentimentsBySymbols } = require('../services/sentimentService');
+        const heldSymbols = [...new Set(
+            holdings
+                .map(h => String(h.symbol || '').trim().toUpperCase())
+                .filter(Boolean)
+        )];
+        const sentiments = heldSymbols.length > 0
+            ? await getStockSentimentsBySymbols(heldSymbols)
+            : [];
+        const sentimentBySymbol = new Map(sentiments.map(s => [s.symbol, s.wss]));
+        const heatmap = heldSymbols.map(symbol => ({
+            symbol,
+            score: sentimentBySymbol.get(symbol) || 0,
         }));
 
         // 5. Performance history — build equity curve from transactions
