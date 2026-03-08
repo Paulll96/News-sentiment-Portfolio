@@ -183,8 +183,55 @@ async function getLiveQuoteBySymbol(symbol, currencyHint = 'INR') {
     return fetchLiveQuote(symbol, currencyHint);
 }
 
+/**
+ * Fetches historical daily closing prices for an array of symbols over a given range
+ * @param {string[]} symbols - Array of stock symbols
+ * @param {string} range - e.g., '1mo', '3mo', '1y'
+ * @returns {Record<string, Record<string, number>>} - { 'AAPL': { '2026-03-01': 150.5, ... } }
+ */
+async function fetchHistoricalPrices(symbols, range = '1mo') {
+    const historyMap = {};
+    if (!symbols || symbols.length === 0) return historyMap;
+
+    for (const symbol of symbols) {
+        try {
+            const providerSymbol = formatSymbolForProvider(symbol, 'yahoo');
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(providerSymbol)}?range=${range}&interval=1d`;
+
+            const response = await axios.get(url, {
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0 SentinelQuant/1.0' }
+            });
+
+            const result = response.data?.chart?.result?.[0];
+            if (!result || !result.timestamp || !result.indicators?.quote?.[0]?.close) {
+                continue;
+            }
+
+            const timestamps = result.timestamp;
+            const closes = result.indicators.quote[0].close;
+            historyMap[symbol] = {};
+
+            for (let i = 0; i < timestamps.length; i++) {
+                const price = closes[i];
+                if (price == null || !Number.isFinite(price)) continue;
+
+                const d = new Date(timestamps[i] * 1000);
+                const dateKey = d.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+                historyMap[symbol][dateKey] = Number(price);
+            }
+        } catch (error) {
+            console.warn(`Failed to fetch historical prices for ${symbol}: ${error.message}`);
+        }
+    }
+
+    return historyMap;
+}
+
 module.exports = {
     getQuoteForStock,
     getQuotesForStocks,
     getLiveQuoteBySymbol,
+    fetchHistoricalPrices,
 };

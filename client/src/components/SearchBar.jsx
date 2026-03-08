@@ -11,8 +11,10 @@ export default function SearchBar() {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [stocks, setStocks] = useState([]);
+    const [sentimentBySymbol, setSentimentBySymbol] = useState({});
     const [filtered, setFiltered] = useState([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const sentimentRequestedRef = useRef(new Set());
     const inputRef = useRef(null);
     const navigate = useNavigate();
 
@@ -38,11 +40,31 @@ export default function SearchBar() {
                     .then(data => setStocks(data.stocks || []))
                     .catch(() => { });
             }
+
+            // Warm up with aggregated sentiment payload (may be limited by tier).
+            if (Object.keys(sentimentBySymbol).length === 0) {
+                apiRequest('/sentiment?days=7')
+                    .then((data) => {
+                        const sentiments = data?.sentiments || [];
+                        const map = {};
+                        sentiments.forEach((s) => {
+                            if (!s?.symbol) return;
+                            map[s.symbol] = {
+                                signal: s.signal || 'neutral',
+                                wss: typeof s.wss === 'number' ? s.wss : null,
+                            };
+                        });
+                        if (Object.keys(map).length > 0) {
+                            setSentimentBySymbol(prev => ({ ...prev, ...map }));
+                        }
+                    })
+                    .catch(() => { });
+            }
         } else {
             setQuery('');
             setSelectedIndex(0);
         }
-    }, [open]);
+    }, [open, stocks.length, sentimentBySymbol]);
 
     // Filter on query change
     useEffect(() => {
@@ -62,6 +84,113 @@ export default function SearchBar() {
         }
         setSelectedIndex(0);
     }, [query, stocks]);
+
+    // Backfill missing sentiment for visible results so each row can show current status.
+    useEffect(() => {
+        if (!open || filtered.length === 0) return;
+
+        const missingSymbols = filtered
+            .map(s => s.symbol)
+            .filter(symbol => symbol && !sentimentBySymbol[symbol] && !sentimentRequestedRef.current.has(symbol));
+
+        if (missingSymbols.length === 0) return;
+
+        missingSymbols.forEach(symbol => sentimentRequestedRef.current.add(symbol));
+
+        Promise.allSettled(
+            missingSymbols.map(symbol => apiRequest(`/sentiment/${symbol}?days=7`))
+        ).then((results) => {
+            const updates = {};
+
+            results.forEach((result, idx) => {
+                const symbol = missingSymbols[idx];
+                if (!symbol) return;
+
+                if (result.status === 'fulfilled') {
+                    const payload = result.value || {};
+                    updates[symbol] = {
+                        signal: payload.signal || 'neutral',
+                        wss: typeof payload.wss === 'number' ? payload.wss : null,
+                    };
+                    return;
+                }
+
+                updates[symbol] = {
+                    signal: 'neutral',
+                    wss: null,
+                };
+            });
+
+            if (Object.keys(updates).length > 0) {
+                setSentimentBySymbol(prev => ({ ...prev, ...updates }));
+            }
+        });
+    }, [open, filtered, sentimentBySymbol]);
+
+    const getSignalBadge = (symbol) => {
+        const meta = sentimentBySymbol[symbol] || { signal: 'neutral', wss: null };
+        const signal = meta.signal || 'neutral';
+
+        const signalColor = {
+            bullish: 'var(--accent-green)',
+            bearish: 'var(--accent-red)',
+            neutral: 'var(--text-secondary)',
+        };
+
+        const signalBg = {
+            bullish: 'var(--accent-green-dim)',
+            bearish: 'var(--accent-red-dim)',
+            neutral: 'rgba(148,163,184,0.12)',
+        };
+
+        return {
+            signal,
+            wss: meta.wss,
+            color: signalColor[signal] || signalColor.neutral,
+            background: signalBg[signal] || signalBg.neutral,
+            icon: signal === 'bullish' ? '▲' : signal === 'bearish' ? '▼' : '●',
+        };
+    };
+
+    const renderTrendLine = (signal) => {
+        const trendColor = {
+            bullish: 'var(--accent-green)',
+            bearish: 'var(--accent-red)',
+            neutral: 'var(--text-secondary)',
+        };
+
+        const trendPath = {
+            bullish: 'M2 14 L10 12 L18 9 L26 6 L34 3',
+            bearish: 'M2 3 L10 5 L18 8 L26 11 L34 14',
+            neutral: 'M2 9 L10 8 L18 9 L26 8 L34 9',
+        };
+
+        const color = trendColor[signal] || trendColor.neutral;
+        const path = trendPath[signal] || trendPath.neutral;
+
+        return (
+            <svg width="36" height="18" viewBox="0 0 36 18" role="img" aria-label={`${signal} trend`}>
+                <path
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="48"
+                    strokeDashoffset="48"
+                >
+                    <animate
+                        attributeName="stroke-dashoffset"
+                        values="48;0;0"
+                        keyTimes="0;0.6;1"
+                        dur="1.6s"
+                        repeatCount="indefinite"
+                    />
+                </path>
+            </svg>
+        );
+    };
 
     const handleSelect = (stock) => {
         navigate(`/stock/${stock.symbol}`);
@@ -192,6 +321,9 @@ export default function SearchBar() {
                             </div>
                         ) : (
                             filtered.map((stock, i) => (
+                                (() => {
+                                    const badge = getSignalBadge(stock.symbol);
+                                    return (
                                 <div
                                     key={stock.id || stock.symbol}
                                     onClick={() => handleSelect(stock)}
@@ -220,16 +352,59 @@ export default function SearchBar() {
                                             {stock.name}
                                         </span>
                                     </div>
-                                    <span style={{
-                                        fontSize: 10,
-                                        padding: '2px 8px',
-                                        borderRadius: 4,
-                                        background: 'rgba(255,255,255,0.04)',
-                                        color: 'var(--text-dim)',
-                                    }}>
-                                        {stock.sector}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: 42,
+                                            height: 20,
+                                            borderRadius: 6,
+                                            background: 'rgba(255,255,255,0.03)',
+                                            border: '1px solid var(--border-color)',
+                                        }}>
+                                            {renderTrendLine(badge.signal)}
+                                        </span>
+
+                                        <span style={{
+                                            fontSize: 10,
+                                            padding: '2px 8px',
+                                            borderRadius: 4,
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-dim)',
+                                        }}>
+                                            {stock.sector}
+                                        </span>
+
+                                        <span style={{
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            textTransform: 'capitalize',
+                                            padding: '2px 8px',
+                                            borderRadius: 9999,
+                                            background: badge.background,
+                                            color: badge.color,
+                                        }}>
+                                            {badge.icon} {badge.signal}
+                                        </span>
+
+                                        <span style={{
+                                            fontSize: 10,
+                                            padding: '2px 6px',
+                                            borderRadius: 4,
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-dim)',
+                                            minWidth: 44,
+                                            textAlign: 'center',
+                                        }}>
+                                            {typeof badge.wss === 'number'
+                                                ? `${badge.wss > 0 ? '+' : ''}${(badge.wss * 100).toFixed(1)}%`
+                                                : '--'}
+                                        </span>
+                                    </div>
                                 </div>
+                                    );
+                                })()
                             ))
                         )}
                     </div>

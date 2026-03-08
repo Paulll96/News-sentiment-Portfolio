@@ -258,13 +258,13 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         }));
 
         // 5. Performance history — build equity curve from transactions
+        // 5. Performance history — True Mark-to-Market
         const txResult = await query(
-            `SELECT t.type, t.total_value, t.executed_at, s.symbol
+            `SELECT t.type, t.shares, t.executed_at, s.symbol
              FROM transactions t
              JOIN stocks s ON t.stock_id = s.id
              WHERE t.user_id = $1
-             ORDER BY t.executed_at ASC
-             LIMIT 200`,
+             ORDER BY t.executed_at ASC`,
             [req.user.userId]
         );
 
@@ -281,35 +281,78 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         );
         const initialValue = parseFloat(initCapResult.rows[0]?.initial_capital) || 0;
 
-        let equity = initialValue;
+        const txHistory = txResult.rows;
+        const uniqueSymbols = [...new Set(txHistory.map(tx => tx.symbol))];
+
+        const { fetchHistoricalPrices } = require('../services/quoteService');
+        const historicalPrices = uniqueSymbols.length > 0
+            ? await fetchHistoricalPrices(uniqueSymbols, '1mo')
+            : {};
+
         const perfHistory = [];
-        const txByMonth = {};
+        const now = new Date();
+        const dates30Days = [];
+        for (let i = 29; i >= 0; i--) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            dates30Days.push(d);
+        }
 
-        for (const tx of txResult.rows) {
-            const date = new Date(tx.executed_at);
-            const key = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-            if (!txByMonth[key]) txByMonth[key] = 0;
-            const val = parseFloat(tx.total_value);
-            // Handle each transaction type explicitly
-            if (tx.type === 'buy') {
-                txByMonth[key] -= val;       // Cash out → buy shares
-            } else if (tx.type === 'sell') {
-                txByMonth[key] += val;       // Cash in  → sell shares
+        const lastKnownPrices = {};
+
+        for (const date of dates30Days) {
+            const dateStrYYYYMMDD = date.toISOString().split('T')[0];
+            const endOfDay = new Date(date);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            let dailyEquity = 0;
+            const currentShares = {};
+
+            // Accumulate share quantities up to this day
+            for (const tx of txHistory) {
+                if (new Date(tx.executed_at) <= endOfDay) {
+                    const shares = parseFloat(tx.shares) || 0;
+                    if (!currentShares[tx.symbol]) currentShares[tx.symbol] = 0;
+
+                    if (tx.type === 'buy') {
+                        currentShares[tx.symbol] += shares;
+                    } else if (tx.type === 'sell') {
+                        currentShares[tx.symbol] -= shares;
+                    }
+                }
             }
-            // 'rebalance' = net-neutral (internal reweighting), no cash flow
+
+            // Calculate MTM value using historical prices
+            let dayHasData = false;
+            for (const [symbol, shares] of Object.entries(currentShares)) {
+                if (shares <= 0.0001) continue; // Ignore negligible fractional dust
+
+                let price = historicalPrices[symbol]?.[dateStrYYYYMMDD];
+                if (price !== undefined) {
+                    lastKnownPrices[symbol] = price;
+                } else {
+                    price = lastKnownPrices[symbol] || 0; // Use last known if weekend/holiday
+                }
+
+                if (price > 0) {
+                    dailyEquity += (shares * price);
+                    dayHasData = true;
+                }
+            }
+
+            if (dayHasData || Object.keys(currentShares).length > 0) {
+                perfHistory.push({
+                    date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    portfolio: Math.round(dailyEquity)
+                });
+            }
         }
 
-        for (const [date, netFlow] of Object.entries(txByMonth)) {
-            equity += netFlow;
-            perfHistory.push({ date, portfolio: Math.round(equity) });
-        }
-
-        // If no transaction history, show flat line at current value (no randomness)
+        // Ensure at least today's actual value is in the chart if it's perfectly flat
         if (perfHistory.length === 0 && totalValue > 0) {
-            const now = new Date();
             perfHistory.push({
-                date: now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-                portfolio: Math.round(totalValue),
+                date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                portfolio: Math.round(totalValue)
             });
         }
 

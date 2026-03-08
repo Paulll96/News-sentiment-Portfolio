@@ -731,7 +731,8 @@ async function executeTrades(userId, trades, portfolioValue) {
 
             const stockId = stockResult.rows[0].id;
             const tradeValue = parseFloat(trade.tradeValue);
-            const approxPrice = tradeValue > 0 ? tradeValue : 1;
+            const quote = await getLiveQuoteBySymbol(trade.symbol, 'INR');
+            const approxPrice = quote && quote.price > 0 ? quote.price : (tradeValue > 0 ? tradeValue : 1);
             const approxShares = tradeValue / approxPrice;
 
             await client.query(
@@ -777,7 +778,8 @@ async function initializePortfolio(userId, initialCapital = 10000) {
             const stockId = stockResult.rows[0].id;
             const value = initialCapital * weight;
             const sentiment = sentiments.find(s => s.symbol === symbol);
-            const approxPrice = value > 0 ? value : 1;
+            const quote = await getLiveQuoteBySymbol(symbol, 'INR');
+            const approxPrice = quote && quote.price > 0 ? quote.price : (value > 0 ? value : 1);
             const approxShares = value / approxPrice;
 
             await client.query(
