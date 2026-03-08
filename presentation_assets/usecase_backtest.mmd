@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant Controller
+    participant QuantEngine
+    participant Database
+    Controller->>QuantEngine: calculateTargetWeights(holdings, sentiment)
+    QuantEngine->>QuantEngine: Apply 60/40 blended formula calculation
+    QuantEngine-->>Controller: Return [Target Weight Arrays]
+    loop For Each Holding
+        Controller->>Controller: abs(Target - Current)
+        alt absolute_drift >= Threshold
+            Controller->>Controller: push trade into Array
+        else absolute_drift < Threshold
+            Controller->>Controller: skip calculation
+        end
+    end
+    Controller->>Database: executeTradeQueue(Active Array)

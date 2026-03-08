@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant Postman
+    participant ExpressRouter
+    participant AuthMiddleware
+    participant PostgresDB
+    Postman->>ExpressRouter: POST /api/auth/login
+    ExpressRouter->>PostgresDB: "Validate bcrypt hash"
+    PostgresDB-->>ExpressRouter: "Match OK"
+    ExpressRouter-->>Postman: "200 OK [Bearer JWT]"
+    Postman->>ExpressRouter: "POST /api/portfolio/rebalance (Header: Bearer)"
+    ExpressRouter->>AuthMiddleware: "verifyToken(JWT)"
+    AuthMiddleware-->>ExpressRouter: "User UUID Validated"
+    ExpressRouter->>PostgresDB: "BEGIN, UPDATE, COMMIT"
+    ExpressRouter-->>Postman: "200 OK [JSON Trade Array Output]"

@@ -1,0 +1,177 @@
+%%{init: {'theme': 'default'}}%%
+erDiagram
+    %% Styling Groups
+    %% Auth & User Data
+    classDef auth fill:#e2f0d9,stroke:#548235,stroke-width:2px,color:#000
+    %% Portfolio & Transcations
+    classDef port fill:#ddebf7,stroke:#2e75b6,stroke-width:2px,color:#000
+    %% Market Data
+    classDef mrkt fill:#fff2cc,stroke:#bf8f00,stroke-width:2px,color:#000
+    %% Content & Sentiment
+    classDef cont fill:#fce4d6,stroke:#c55a11,stroke-width:2px,color:#000
+    %% System / Misc
+    classDef misc fill:#ededed,stroke:#7f7f7f,stroke-width:2px,color:#000
+    USERS {
+        uuid id PK
+        varchar email UK
+        varchar password_hash
+        varchar name
+        varchar tier "free, pro, enterprise"
+        varchar reset_token
+        timestamp reset_token_expiry
+        varchar totp_secret
+        boolean totp_enabled
+        text totp_backup_codes
+        varchar role "admin, user"
+        timestamp created_at
+        timestamp updated_at
+        timestamp last_login
+    }
+
+    STOCKS {
+        uuid id PK
+        varchar symbol UK
+        varchar name
+        varchar sector
+        varchar exchange "US, NSE, etc."
+        varchar country
+        varchar currency
+        decimal market_cap
+        boolean is_active
+        timestamp created_at
+    }
+
+    INSTRUMENT_MASTER {
+        uuid id PK
+        varchar symbol
+        varchar name
+        varchar exchange
+        varchar country
+        varchar currency
+        varchar isin
+        boolean is_tradable
+        timestamp updated_at
+    }
+
+    STOCK_QUOTES {
+        uuid stock_id PK, FK
+        decimal price
+        varchar currency
+        varchar source
+        timestamp as_of
+        timestamp updated_at
+    }
+
+    NEWS_ARTICLES {
+        uuid id PK
+        varchar source
+        text title
+        text content
+        varchar url UK
+        timestamp published_at
+        timestamp scraped_at
+        boolean processed
+    }
+
+    SENTIMENT_SCORES {
+        uuid id PK
+        uuid article_id FK
+        uuid stock_id FK
+        varchar sentiment "positive, negative, neutral"
+        decimal confidence
+        decimal raw_score
+        varchar source
+        timestamp analyzed_at
+    }
+
+    PORTFOLIO_HOLDINGS {
+        uuid id PK
+        uuid user_id FK
+        uuid stock_id FK
+        decimal shares
+        decimal avg_cost
+        decimal current_value
+        decimal weight
+        decimal sentiment_score
+        timestamp updated_at
+    }
+
+    TRANSACTIONS {
+        uuid id PK
+        uuid user_id FK
+        uuid stock_id FK
+        varchar type "buy, sell, rebalance"
+        decimal shares
+        decimal price
+        decimal total_value
+        text reason
+        timestamp executed_at
+    }
+
+    BACKTEST_RESULTS {
+        uuid id PK
+        uuid user_id FK
+        varchar name
+        date start_date
+        date end_date
+        decimal initial_capital
+        decimal final_value
+        decimal total_return
+        decimal cagr
+        decimal sharpe_ratio
+        decimal max_drawdown
+        decimal alpha
+        integer trades_count
+        jsonb config
+        timestamp created_at
+    }
+
+    DAILY_SENTIMENT {
+        uuid id PK
+        uuid stock_id FK
+        date date
+        decimal avg_sentiment
+        decimal weighted_sentiment
+        integer article_count
+        integer positive_count
+        integer negative_count
+        integer neutral_count
+    }
+
+    WATCHLIST {
+        uuid id PK
+        uuid user_id FK
+        uuid stock_id FK
+        timestamp added_at
+    }
+
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK
+        varchar type
+        varchar title
+        text message
+        boolean read
+        timestamp created_at
+    }
+
+    %% Relationships
+    USERS ||--o{ PORTFOLIO_HOLDINGS : owns
+    USERS ||--o{ TRANSACTIONS : executes
+    USERS ||--o{ BACKTEST_RESULTS : runs
+    USERS ||--o{ WATCHLIST : watches
+    USERS ||--o{ NOTIFICATIONS : receives
+
+    STOCKS ||--o{ STOCK_QUOTES : has
+    STOCKS ||--o{ SENTIMENT_SCORES : analyzed_by
+    STOCKS ||--o{ PORTFOLIO_HOLDINGS : held_in
+    STOCKS ||--o{ TRANSACTIONS : traded_in
+    STOCKS ||--o{ DAILY_SENTIMENT : aggregates
+    STOCKS ||--o{ WATCHLIST : tracked_in
+    
+    NEWS_ARTICLES ||--o{ SENTIMENT_SCORES : generates
+
+    class USERS,WATCHLIST,NOTIFICATIONS auth
+    class PORTFOLIO_HOLDINGS,TRANSACTIONS,BACKTEST_RESULTS port
+    class STOCKS,INSTRUMENT_MASTER,STOCK_QUOTES mrkt
+    class NEWS_ARTICLES,SENTIMENT_SCORES,DAILY_SENTIMENT cont

@@ -1,24 +1,59 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../utils/api';
 import { SkeletonCard, Skeleton } from '../components/Skeleton';
 
 export default function Settings() {
     const toast = useToast();
+    const navigate = useNavigate();
+    const { user, loading: authLoading, logout } = useAuth();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [name, setName] = useState('');
 
     useEffect(() => {
+        if (authLoading) return;
+
+        if (!user) {
+            setLoading(false);
+            navigate('/portfolio', { replace: true });
+            return;
+        }
+
+        let cancelled = false;
         apiRequest('/users/profile')
             .then(data => {
+                if (cancelled) return;
                 setProfile(data.user);
                 setName(data.user.name || '');
             })
-            .catch(err => toast(err.message || 'Failed to load profile', 'error'))
-            .finally(() => setLoading(false));
-    }, [toast]);
+            .catch(err => {
+                if (cancelled) return;
+                if (err?.status === 401 || err?.status === 403) {
+                    navigate('/portfolio', { replace: true });
+                    return;
+                }
+                toast(err.message || 'Failed to load profile', 'error');
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [authLoading, navigate, toast, user]);
+
+    const handleLogout = async () => {
+        await logout();
+        setProfile(null);
+        setName('');
+        toast('Logged out successfully', 'info');
+        navigate('/portfolio', { replace: true });
+    };
 
     const handleSave = async (e) => {
         e.preventDefault();
@@ -142,6 +177,23 @@ export default function Settings() {
             {!loading && (
                 <div className="col-span-12">
                     <TwoFactorSetup toast={toast} />
+                </div>
+            )}
+
+            {!loading && (
+                <div className="col-span-12" style={{ marginTop: '2rem' }}>
+                    <div className="glass-card no-hover" style={{ border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '14px' }}>
+                            Sign out of your SentinelQuant account on this device. You will need to re-authenticate to access your portfolio.
+                        </p>
+                        <button
+                            className="btn"
+                            style={{ background: '#ef4444', color: 'white', border: 'none', fontWeight: 600 }}
+                            onClick={handleLogout}
+                        >
+                            Log Out
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

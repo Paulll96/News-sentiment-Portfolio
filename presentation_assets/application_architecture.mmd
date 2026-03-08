@@ -1,0 +1,61 @@
+flowchart TD
+    classDef ui fill:#4a5568,stroke:#2d3748,color:#fff
+    classDef gateway fill:#805ad5,stroke:#553c9a,color:#fff
+    classDef security fill:#e53e3e,stroke:#9b2c2c,color:#fff
+    classDef ingest fill:#3182ce,stroke:#2b6cb0,color:#fff
+    classDef nlp fill:#38a169,stroke:#276749,color:#fff
+    classDef db fill:#edf2f7,stroke:#a0aec0,color:#1a202c
+    subgraph Client Interface Module
+        CP[1. Credentials]
+        LP([Login Page]):::ui
+        DB([Dashboard]):::ui
+    end
+    subgraph API Gateway Module
+        ER[Express Router]:::gateway
+        RH[Response Handler]:::gateway
+    end
+    subgraph Security Module
+        JWT[JWT Validator]:::security
+    end
+    subgraph Data Ingestion Module
+        NS[News Scraper Engine]:::ingest
+        HC[HTTP Client]:::ingest
+    end
+    subgraph Preprocessing Module
+        HS[HTML Sanitizer]:::nlp
+        SE[Stock Entity Detector]:::nlp
+    end
+    subgraph Sentiment Intelligence Module
+        FB[FinBERT Model]:::security
+        TD[Time-Decay Engine]:::security
+    end
+    subgraph Portfolio Quant Module
+        AA[60/40 Allocator]:::nlp
+        RL[Rebalance Logic]:::nlp
+    end
+    subgraph Trade Execution Module
+        OG[Order Generator]:::gateway
+        TL[Transaction Logger]:::gateway
+    end
+    subgraph Persistence Module
+        DB_SQL[(PostgreSQL Database)]:::db
+    end
+    CP -->|1. Submit| LP
+    LP -->|2. POST| ER
+    ER -->|3. Verify| JWT
+    JWT -->|4. Issue Token| LP
+    NS -->|5. Cron Trigger| HC
+    HC -->|6. Raw HTML| HS
+    HS -->|7. Clean Text| SE
+    SE -->|8. Parsed Target| FB
+    FB -->|9. AI Score| TD
+    TD -->|10. Save WSS| DB_SQL
+    DB -->|11. Trigger Rebalance| ER
+    ER -->|12. Auth Check| JWT
+    JWT -->|13. Fetch Sentiment| AA
+    AA -->|14. Target Weight| RL
+    RL -->|15. Buying Signs| OG
+    OG -->|16. Commit Log| TL
+    TL -->|17. Save Trade| DB_SQL
+    DB_SQL -->|18. Return State| RH
+    RH -->|19. Updated View| DB

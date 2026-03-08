@@ -73,10 +73,23 @@ export function AuthProvider({ children }) {
         return data.user;
     };
 
-    const logout = () => {
-        localStorage.removeItem('token');
-        setUser(null);
-        setTwoFactorChallenge(null);
+    const logout = async () => {
+        const token = localStorage.getItem('token');
+
+        try {
+            if (token) {
+                await apiRequest('/auth/logout', { method: 'POST' });
+            }
+        } catch (error) {
+            // Best-effort server logout; local sign-out still proceeds.
+            if (![0, 401, 403].includes(error?.status)) {
+                console.warn('Logout request failed:', error?.message || error);
+            }
+        } finally {
+            localStorage.removeItem('token');
+            setUser(null);
+            setTwoFactorChallenge(null);
+        }
     };
 
     return (

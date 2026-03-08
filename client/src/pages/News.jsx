@@ -77,9 +77,21 @@ export default function News() {
                     </select>
                 </div>
                 <button className="btn btn-secondary" onClick={handleScrape}>📥 Scrape News</button>
-                <StarBorder as="div" color="#3b82f6" speed="5s">
-                    <button className="btn btn-primary" onClick={handleAnalyze} style={{ border: 'none', background: 'transparent', color: '#fff' }}>🧠 Analyze</button>
+                <StarBorder as="button" color="#3b82f6" speed="5s" onClick={handleAnalyze} className="analyze-btn">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                        🧠 Analyze
+                    </div>
                 </StarBorder>
+                <style>{`
+                    .analyze-btn .star-border-inner-content {
+                        padding: 9px 18px !important;
+                        font-size: 13px !important;
+                        border-radius: var(--radius-md) !important;
+                    }
+                    .analyze-btn {
+                        border-radius: var(--radius-md) !important;
+                    }
+                `}</style>
             </div>
 
             <div className="bento-grid">

@@ -1,0 +1,12 @@
+sequenceDiagram
+    actor End_User
+    participant App_Component
+    participant API_Gateway
+    participant Portfolio_Router
+    End_User->>App_Component: "Uploads Holdings CSV"
+    App_Component->>App_Component: "parseHoldingsCsv() (Sanitize)"
+    App_Component->>API_Gateway: "POST /api/portfolio/import [JSON]"
+    API_Gateway->>API_Gateway: "Rate Limit & Validate JWT"
+    API_Gateway->>Portfolio_Router: "Route sanitized request"
+    Portfolio_Router-->>App_Component: "200 OK {imported, rejected}"
+    App_Component-->>End_User: "Render updated Portfolio DOM"

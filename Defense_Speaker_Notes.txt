@@ -1,0 +1,166 @@
+SENTINELQUANT EXPANDED DEFENSE GUIDE: SLIDE-BY-SLIDE TECHNICAL EXPLANATIONS
+================================================================================
+
+Slide 1: Project Front Page
+Function: Establishes the project identity and authors.
+What you should know: You built this as a web-based simulated quantitative trading platform. It uses React on the frontend and Node.js on the backend. The core innovation is using Natural Language Processing (FinBERT) to drive algorithmic trades.
+
+Slide 2: Introduction
+Function: Explains the high-level concept of SentinelQuant.
+What you should know: The system replaces manual technical analysis with programmatic fundamental analysis. The pipeline is 1. Ingest (getting news via automated scrapers instead of manual input), 2. Analyze (sending text to a Hugging Face FinBERT model to get sentiment probabilities), and 3. Rebalance (using formulas to adjust a user's stock holdings based on that sentiment).
+
+Slide 3: Problem Statement
+Function: Identifies the specific problems retail traders face that your project solves.
+What you should know: Retail traders suffer from "Information Overload" (too much news to read) and "Emotional Bias" (fear/greed dictating trades). Your software mathematically evaluates news and strictly follows a rebalancing threshold, completely removing human emotion and processing delays.
+
+Slide 4: Project Objectives
+Function: Outlines the technical milestones the project set out to achieve.
+What you should know: You successfully built an asynchronous scraper, integrated an external ML model (FinBERT) for scoring, developed mathematical formulas (Weighted Sentiment Score and Time Decay) to evaluate data, built a rebalancing engine, and created a React dashboard to visualize everything.
+
+Slide 5: Purpose and Need of the Project
+Function: Defends why you built this specific architecture.
+What you should know: You built a Client-Server Microservices-style architecture instead of a desktop app to make it accessible. By using Express/Node, you demonstrated how to manage asynchronous tasks (calling external ML APIs) without blocking the main server thread, which is a crucial enterprise skill.
+
+Slide 6: Scope of the Project
+Function: Defines what the project does and explicitly states what it does NOT do.
+What you should know: The system tracks simulated portfolios. It maps global news to NSE/US tickers. It explicitly DOES NOT execute live trades with real money using a brokerage API (like Zerodha or Alpaca) because of SEC/SEBI regulations and the financial risk involved in an academic prototype.
+
+Slide 7: Social Relevance & SDGs Addressed
+Function: Connects your technical work to societal impact.
+What you should know: By automating the analysis of financial news, your tool democratizes quantitative finance. It maps to SDG 8 (Decent Work & Economic Growth) by promoting informed economic decisions, and SDG 9 (Innovation & Infrastructure) by showing how to build AI-driven web infrastructure.
+
+Slide 8: Software Requirement Specification (SRS)
+Function: Details the environment and actors.
+What you should know: The frontend is React 19 built with Vite. The backend is Node.js 18 using CommonJS (require). The database is PostgreSQL. Users can upload CSVs and view dashboards, while the system automates scraping and analysis. There is strictly no "Admin" role in this scope.
+
+Slide 8.1: Functional Requirements
+Function: Lists the actionable features the system must perform.
+What you should know: FR-01: You used JSON Web Tokens (JWT) for authentication. FR-02: You used node-cron for background scraping. FR-03: You used Axios to HTTP POST data to FinBERT. FR-04: You wrote logic to parse CSV byte arrays into JSON. FR-05: You built a quant engine to calculate target weights and drift.
+
+Slide 8.2: Non-Functional Requirements
+Function: Lists how the system must perform its features securely and reliably.
+What you should know: Resilience: You built recursive retry loops (setTimeout) in Node.js to handle when the Hugging Face API times out (HTTP 503). Security: You secured routes with JWT middleware. ACID: You use PostgreSQL BEGIN and COMMIT transactions so if a trade calculation fails, the database rolls back and no money is lost.
+
+Slide 9: System Architecture (Block Diagram)
+Function: Shows the physical data flow of the entire application.
+What you should know: The React client talks to the Express API via REST. Separately, a Cron job triggers the scraper, which gets RSS text and sends it to the Sentiment Service. The Sentiment Service POSTs 512-token strings to Hugging Face. The returned probabilities are converted to a WSS score. The Portfolio service uses that score to execute SQL transactions in PostgreSQL.
+
+Slide 10: Application Architecture Design (9-Module Decomposition)
+Function: Shows the decoupled, modular design of your codebase.
+What you should know: You purposefully decoupled the system. The Presentation layer (React) knows nothing about the Ingestion layer. They communicate strictly through the API Gateway. This means if the Scraper breaks, the Dashboard stays online. It proves you understand Separation of Concerns.
+
+Slide 11: GUI Design
+Function: Explains the React frontend design patterns.
+What you should know: You used functional components with React Hooks. You avoided massive state managers like Redux because localized state is faster for this use case. You used Recharts for the SVG pie charts and built CSS configurations that change color based on FinBERT scores.
+
+Slide 12: API Design
+Function: Details the RESTful principles of the Express backend.
+What you should know: The API is stateless. It uses JSON payloads. Passwords are hashed using bcryptjs to prevent database breaches from revealing passwords. The server gives the React client a Bearer JWT, which the client must send in the header for protected routes to prove identity.
+
+Slide 13: Database Design
+Function: Shows the Entity-Relationship Diagram for PostgreSQL.
+What you should know: You chose a relational database (PostgreSQL) instead of NoSQL (MongoDB) because financial ledgers require absolute schema rigidity and foreign keys. The design ensures that a Transaction must mathematically link to a valid User and Stock UUID, preventing orphaned data.
+
+Slide 14: Technology Stack
+Function: Lists the specific technologies used.
+What you should know: React 19, Vite, Recharts for UI. Node.js 18, Express, node-cron for the server. PostgreSQL via the pg driver for the database. Hugging Face Inference API for ML. Helmet and express-rate-limit for security. You know how to configure package.json and .env files for these.
+
+Slide 15: Module Use Case (M1/M2) - Client API Interaction
+Function: Traces the data path when a user uploads a portfolio CSV.
+What you should know: The user uploads a CSV. React sanitizes and parses it into JSON. React sends an HTTP POST. Express catches it, verifies the JWT, and routes it to the Portfolio controller. The controller inserts the data into PostgreSQL and returns a 200 OK. React updates the DOM.
+
+Slide 16: Module Use Case (M3/M4) - Cron to Ingestion Orchestration
+Function: Traces the automated news scraping pipeline.
+What you should know: A node-cron job runs on a schedule (e.g., every 2 hours) entirely independently of user action. It triggers a scraper that makes HTTP GET requests to news RSS feeds, using a custom User-Agent to avoid blocks. It parses the XML/HTML, extracts headlines, and saves them to the database.
+
+Slide 17: Module Use Case (M5/M6) - Preprocessing to ML Inference
+Function: Traces how raw news becomes an AI sentiment score.
+What you should know: The system uses Regular Expressions (Regex) to detect stock ticker mentions (like "RELIANCE.NS") in the raw text. The text is sanitized (HTML removed) and truncated to ensure it doesn't exceed FinBERT's 512-token limit. It is then POSTed to Hugging Face.
+
+Slide 18: Module Use Case (M7/M8) - Quant Target to Execution
+Function: Traces the mathematical portfolio rebalancing loop.
+What you should know: The engine takes the current portfolio holdings and the FinBERT sentiment scores. It calculates a "Target Weight" for each stock using a 60/40 formula. It calculates the absolute difference between Current and Target. If the difference is greater than the rebalance threshold (e.g., 5%), it generates a buy/sell trade order.
+
+Slide 19: Module Use Case (M9) - ACID DB Persistence
+Function: Explains how you prevent data loss during database writes.
+What you should know: When saving a trade, you are editing both portfolio_holdings and transactions. If the server crashes between these two inserts, the ledger is corrupted. You use SQL BEGIN, UPDATE, INSERT, and COMMIT. If any promise rejects, a ROLLBACK is issued, instantly undoing the partial changes.
+
+Slide 20: Algorithm 1 - FinBERT Raw Score
+Function: Explains the math behind interpreting the AI's output.
+What you should know: FinBERT returns an array of three probabilities: Positive, Negative, and Neutral. You built a formula: (Pos - Neg) * (1 - Neu * 0.5). This formula mathematically reduces the score if the AI is highly confident that the text is "Neutral", preventing the algorithm from overreacting to boring news.
+
+Slide 21: Algorithm 2 - Exponential Time Decay
+Function: Explains the math that makes old news less important.
+What you should know: Financial news loses value quickly. You use an exponential decay formula: Math.exp(-Target_Hours / Constant_Decay_Factor). This calculates the age of the article using Unix Timestamps. An article from 48 hours ago mathematically yields a much lower weight multiplier than an article from 1 hour ago.
+
+Slide 22: Algorithm 3 - WSS Normalization
+Function: Explains how you combine all scores into one usable metric.
+What you should know: Some stocks have 50 articles written about them; some have 2. To compare them fairly, you calculate a Weighted Sentiment Score (WSS). It is the sum of (Raw Score * Time Weight) divided by the sum of (Time Weights). This mathematically bounds the final result exactly between -1.0 and 1.0, regardless of news volume.
+
+Slide 23: Algorithm 4 - 60/40 Target Allocation
+Function: Explains the mathematical constraints placed on the portfolio.
+What you should know: To prevent the AI from putting 100% of a user's money into one stock based on one good article, you built a 60/40 blend. 60% of the target allocation is dynamically driven by the WSS score, and 40% is hardcoded to an equal-weight distribution. This enforces mathematical diversification and reduces risk.
+
+Slide 24: Algorithm 5 - Rebalance Trigger Logic
+Function: Explains the friction buffer preventing excessive trading.
+What you should know: In the real world, trading costs money (fees). If the target allocation changes by 0.5%, buying/selling is a waste of capital. You programmed a Math.abs(Target - Current) check. If the drift is less than a preset threshold (like 5%), the algorithm refuses to execute the trade, saving simulated fees.
+
+Slide 25: Procedure - Entity Extraction and Fallback
+Function: Explains how the system maps vague news to specific stocks.
+What you should know: Not every article mentions a specific ticker symbol. You wrote fallback logic (isIndiaMarketNews). If Regex doesn't find a specific stock, but finds macro terms like "Nifty" or "Sensex", the system queries the database for all 'NSE' exchange stocks and broadly maps the macro sentiment across them.
+
+Slide 26: Coding Standards & Repository Practices
+Function: Details the professional engineering standards used.
+What you should know: The backend clearly uses CommonJS syntax (require/module.exports). The frontend uses ES6 Modules with React Hooks. You ensured top-tier security by abstracting all API keys, database URLs, and cryptographic secrets into a .env file that is strictly ignored by Git (.gitignore).
+
+Slide 27: Unit Test Design & Functional Validation
+Function: Explains how you verified the mathematical algorithms work.
+What you should know: Instead of building full E2E Selenium suites, you validated the system via isolated unit tests. You fed hardcoded "mock" arrays into the calculateTargetWeights and WSS formulas to ensure the Javascript math output perfectly matched your Excel expectations before hooking it up to live data.
+
+Slide 28: Integration Validation Testing
+Function: Explains how you tested the API endpoints.
+What you should know: You used Postman to simulate the frontend. You made HTTP POST requests to /api/auth/login to confirm the backend verified Bcrypt hashes and generated JWTs. You then passed that JWT as a Bearer Header to the protected /api/portfolio/rebalance route to verify the AuthMiddleware correctly blocked or allowed access.
+
+Slide 29: Functional UI Validation
+Function: Explains how the frontend was tested without the backend.
+What you should know: You ran E2E UI Sequence runbooks. You tested the "Empty State" (ensuring the UI gracefully handles a user with no stocks without crashing) and then injected mock CSV JSON data into the DOM to verify the generic pie charts properly updated to reflect explicit user arrays.
+
+Slide 30: Load Evaluation & Application Constraints
+Function: Explains how you protected the Node server from crashing.
+What you should know: Node.js is single-threaded. If it waits completely for a slow external API (like Hugging Face taking 15s to load a model), the whole server freezes. You built asynchronous Promise chains with recursive setTimeout buffers, allowing the Event Loop to continue serving React users while waiting for the AI response in the background.
+
+Slide 31: Bug Resolution Log
+Function: Shows the panel you can debug complex engineering problems.
+What you should know: You encountered two major bugs. 1. The Hugging Face "503 Cold-Start" timeout. You fixed this by writing the retry loop. 2. A Recharts UI crash. If a calculated allocation was exactly 0, the SVG <Pie> division math failed. You fixed this by injecting a microscopic float (e.g., 0.01) so the math works without visibly altering the UI.
+
+Slide 32: Proposed Deployment Architecture
+Function: Explains how this code would live on the real internet.
+What you should know: The React frontend would be built into static HTML/JS and deployed to a global CDN edge network like Vercel. The Node.js API and PostgreSQL database would be hosted on a cloud provider like Render. The frontend makes HTTP requests to Render, which makes SQL queries to the DB and HTTP queries to Hugging Face.
+
+Slide 33: Status of Development
+Function: Reviews the current state of the codebase.
+What you should know: The core pipeline is functionally complete. The presentation highlights that the team successfully divided the architectural labor: Database modeling, React UI implementation, Scraper HTTP integration, and Algorithmic math formulation.
+
+Slide 34: Working Model Demo Flow
+Function: Explains the exact sequence of your live demonstration.
+What you should know: When you present, you will: 1. Log in. 2. Show the scraping logs in the Node console. 3. Show FinBERT scores. 4. Show the Dashboard SVG charts. 5. Click the rebalance button and show the transactions ledger updating natively.
+
+Slide 35: System Screenshots
+Function: Provides visual proof of the application UI.
+What you should know: These are literal screengrabs of the React Dashboard, the Node terminal executing algorithms, and the PostgreSQL tables, verifying everything you claimed in the previous slides exists accurately.
+
+Slide 36: Estimated Academic Prototype Cost
+Function: Explains the financial architecture of the project.
+What you should know: You engineered the system to run on Free-Tier architectures. Using Vercel's free CDN, Render's free PostgreSQL/Node tiers, and Hugging Face's free Inference API, the monthly burn rate is $0.00, proving you understand modern cost-optimized cloud engineering.
+
+Slide 37: Project Scheduling (12-Week Gantt Mapping)
+Function: Explains the chronological engineering workflow.
+What you should know: The project followed a logical software development lifecycle. You designed databases first, built the ingestion scrapers second, formulated the quant math third, and attached the React UI last, followed by intense validation.
+
+Slide 38: Conclusion Summary
+Function: Wraps up the academic defense.
+What you should know: The final conclusion reiterates that you successfully built a completely deterministic algorithmic trading pipeline that eliminates human emotional volatility, fulfilling all quantitative objectives natively within a decoupled Web architecture.
+
+Slide 39: Bibliography
+Function: Cites academic structural inspiration.
+What you should know: Acknowledges the original Araci FinBERT whitepaper, React documentation, PostgreSQL transaction literature, and Hugging Face API specs, proving your engineering was based on documented, professional standards.

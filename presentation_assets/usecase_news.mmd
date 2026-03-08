@@ -1,0 +1,11 @@
+sequenceDiagram
+    participant CronJob
+    participant Scraper
+    participant ExternalAPI
+    loop Every 2 Hours
+        CronJob->>Scraper: Trigger scrape()
+        Scraper->>ExternalAPI: HTTP GET (Custom User-Agent)
+        ExternalAPI-->>Scraper: XML / JSON Payload
+        Scraper->>Scraper: parseArticles()
+        Scraper->>Database: INSERT INTO news_articles
+    end
