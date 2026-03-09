@@ -572,6 +572,87 @@ async function addHolding(userId, payload) {
     };
 }
 
+async function removeHolding(userId, symbolInput) {
+    const symbol = toUpper(symbolInput);
+    if (!symbol) {
+        return { error: 'symbol is required' };
+    }
+
+    const nseSymbol = ensureNseSymbolSuffix(symbol);
+    const holdingResult = await query(
+        `SELECT ph.id AS holding_id, ph.stock_id, ph.shares, ph.avg_cost, ph.current_value,
+                s.symbol, s.name, s.currency, s.exchange
+         FROM portfolio_holdings ph
+         JOIN stocks s ON ph.stock_id = s.id
+         WHERE ph.user_id = $1
+           AND (s.symbol = $2 OR s.symbol = $3)
+         LIMIT 1`,
+        [userId, symbol, nseSymbol]
+    );
+
+    if (holdingResult.rows.length === 0) {
+        return { error: `Holding not found for symbol: ${symbol}` };
+    }
+
+    const holding = holdingResult.rows[0];
+    const shares = parseFloat(holding.shares || 0);
+    const avgCost = parseFloat(holding.avg_cost || 0);
+    const currentValue = parseFloat(holding.current_value || 0);
+
+    const stockForQuote = {
+        id: holding.stock_id,
+        symbol: holding.symbol,
+        currency: holding.currency,
+        exchange: holding.exchange,
+    };
+
+    let unitPrice = null;
+    try {
+        const quote = await getQuoteForStock(stockForQuote, {
+            maxAgeMinutes: CONFIG.quoteCacheMinutes,
+            forceRefresh: true,
+        });
+        unitPrice = quote?.price || null;
+    } catch {
+        // Quote lookup is best-effort for ledger pricing.
+    }
+
+    if (!unitPrice && avgCost > 0) unitPrice = avgCost;
+    if (!unitPrice && shares > 0 && currentValue > 0) unitPrice = currentValue / shares;
+
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        unitPrice = 0;
+    }
+
+    const totalValue = shares > 0 ? shares * unitPrice : 0;
+
+    await transaction(async (client) => {
+        await client.query(
+            `INSERT INTO transactions (user_id, stock_id, type, shares, price, total_value, reason)
+             VALUES ($1, $2, 'sell', $3, $4, $5, $6)`,
+            [userId, holding.stock_id, shares, unitPrice, totalValue, 'Manual holding removal']
+        );
+
+        await client.query(
+            `DELETE FROM portfolio_holdings
+             WHERE id = $1`,
+            [holding.holding_id]
+        );
+
+        await recalcWeights(client, userId);
+    });
+
+    return {
+        message: `${holding.symbol} removed from holdings`,
+        removed: {
+            symbol: holding.symbol,
+            shares,
+            price: unitPrice,
+            totalValue,
+        },
+    };
+}
+
 async function importHoldings(userId, payload) {
     const dryRun = payload?.dryRun !== false;
     const mode = String(payload?.mode || 'replace').toLowerCase();
@@ -806,6 +887,7 @@ module.exports = {
     calculatePortfolioValue,
     refreshPortfolioQuotes,
     addHolding,
+    removeHolding,
     importHoldings,
     rebalancePortfolio,
     initializePortfolio,

@@ -110,6 +110,7 @@ export default function Portfolio() {
     const [holdings, setHoldings] = useState(null); // null = loading
     const [trades, setTrades] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [removingSymbol, setRemovingSymbol] = useState('');
 
     const [portfolioCurrency, setPortfolioCurrency] = useState('INR');
 
@@ -303,6 +304,33 @@ export default function Portfolio() {
         }
     };
 
+    const handleRemoveHolding = async (symbol) => {
+        if (!user) {
+            toast('Please login first', 'error');
+            return;
+        }
+
+        const normalized = String(symbol || '').trim().toUpperCase();
+        if (!normalized) return;
+
+        const confirmed = window.confirm(`Sell all shares of ${normalized} and remove this holding?`);
+        if (!confirmed) return;
+
+        try {
+            setRemovingSymbol(normalized);
+            await apiRequest(`/portfolio/holdings/${encodeURIComponent(normalized)}`, {
+                method: 'DELETE',
+            });
+            toast(`${normalized} removed from portfolio`, 'success');
+            setTrades([]);
+            await loadPortfolio();
+        } catch (e) {
+            toast(e.message || `Failed to remove ${normalized}`, 'error');
+        } finally {
+            setRemovingSymbol('');
+        }
+    };
+
     const handleCsvFile = async (file) => {
         if (!file) return;
 
@@ -425,13 +453,14 @@ export default function Portfolio() {
                                             <th>Value</th>
                                             <th>Weight</th>
                                             <th>Signal</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {holdings === null ? (
                                             Array.from({ length: 5 }).map((_, i) => <SkeletonTableRow key={i} />)
                                         ) : holdings.length === 0 ? (
-                                            <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No holdings yet — import or add your first NSE stock</td></tr>
+                                            <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No holdings yet — import or add your first NSE stock</td></tr>
                                         ) : (
                                             holdings.map((h, i) => (
                                                 <tr key={i}>
@@ -442,6 +471,17 @@ export default function Portfolio() {
                                                     <td>{formatCurrency(h.currentValue || h.value || 0, portfolioCurrency, currencyLocale)}</td>
                                                     <td>{(h.weight || 0).toFixed(1)}%</td>
                                                     <td><span className={`signal-badge ${h.signal || 'neutral'}`}>{h.signal || 'neutral'}</span></td>
+                                                    <td>
+                                                        <button
+                                                            className="btn btn-ghost"
+                                                            style={{ color: 'var(--accent-red)', padding: '6px 10px', fontSize: 12 }}
+                                                            disabled={loading || removingSymbol === h.symbol}
+                                                            onClick={() => handleRemoveHolding(h.symbol)}
+                                                            title={`Sell all ${h.symbol} shares and remove holding`}
+                                                        >
+                                                            {removingSymbol === h.symbol ? 'Removing...' : 'Sell All'}
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}

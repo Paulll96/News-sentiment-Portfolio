@@ -12,6 +12,7 @@ const {
     calculatePortfolioValue,
     refreshPortfolioQuotes,
     addHolding,
+    removeHolding,
     importHoldings
 } = require('../services/portfolioService');
 const { classifySignal } = require('../services/sentimentService');
@@ -97,6 +98,38 @@ router.post('/holdings', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Add holding error:', error);
         res.status(500).json({ error: 'Failed to add holding' });
+    }
+});
+
+/**
+ * DELETE /api/portfolio/holdings/:symbol
+ * Sell all shares and remove the holding from portfolio
+ */
+router.delete('/holdings/:symbol', authenticateToken, async (req, res) => {
+    try {
+        const symbol = String(req.params.symbol || '').trim();
+        if (!symbol) {
+            return res.status(400).json({ error: 'Symbol is required' });
+        }
+
+        // Best-effort refresh to improve sell ledger valuation.
+        try {
+            await refreshPortfolioQuotes(req.user.userId, { maxAgeMinutes: 0 });
+        } catch {
+            // Ignore refresh failures and continue with fallback valuation.
+        }
+
+        const result = await removeHolding(req.user.userId, symbol);
+
+        if (result.error) {
+            const status = result.error.toLowerCase().includes('not found') ? 404 : 400;
+            return res.status(status).json({ error: result.error });
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Remove holding error:', error);
+        res.status(500).json({ error: 'Failed to remove holding' });
     }
 });
 
