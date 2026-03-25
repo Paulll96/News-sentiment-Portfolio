@@ -1,0 +1,7 @@
+flowchart TD
+    A[Raw Unstructured RSS Text] --> B{Regex: detectStockMentions}
+    B -->|Matches $RELIANCE.NS| C[Associate Article with Stock ID]
+    B -->|No Match| D[Discard Article]
+    C --> E[Sanitize Text String]
+    E --> F[Encode 512-Token Payload]
+    F --> G[POST /models/finbert]

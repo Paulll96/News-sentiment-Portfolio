@@ -1,0 +1,25 @@
+erDiagram
+    USERS ||--o{ PORTFOLIO_HOLDINGS : "has"
+    USERS ||--o{ TRANSACTIONS : "executes"
+    STOCKS ||--o{ PORTFOLIO_HOLDINGS : "tracked in"
+    STOCKS ||--o{ TRANSACTIONS : "traded as"
+    STOCKS ||--o{ SENTIMENT_SCORES : "analyzed for"
+    NEWS_ARTICLES ||--o{ SENTIMENT_SCORES : "generates"
+    USERS {
+        uuid id PK
+        varchar email
+    }
+    STOCKS {
+        uuid id PK
+        varchar symbol
+    }
+    PORTFOLIO_HOLDINGS {
+        uuid user_id FK
+        uuid stock_id FK
+        decimal shares
+    }
+    TRANSACTIONS {
+        uuid stock_id FK
+        varchar type
+        decimal shares
+    }

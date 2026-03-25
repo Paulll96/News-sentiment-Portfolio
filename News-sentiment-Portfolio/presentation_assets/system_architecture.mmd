@@ -1,0 +1,11 @@
+flowchart TD
+    A[React Web Client] -->|HTTP POST JSON| B(Express API Gateway)
+    C[Node-Cron Scheduler] -->|Time Trigger| D(News Scraper Service)
+    B -->|Validated Request| E(Portfolio Service)
+    D -->|Raw RSS Text| F(Sentiment Service)
+    G[Hugging Face FinBERT API]
+    F -->|POST 512-Token String| G
+    G -->|Probability Weights| F
+    F -->|WSS Score| E
+    E -->|SQL Transactions| H[(PostgreSQL Database)]
+    D -->|Insert Articles| H

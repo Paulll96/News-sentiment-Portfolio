@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SentinelQuant | AI-Powered Portfolio Management</title>
+    <meta name="description" content="News-Sentiment-Driven Quant Portfolio - Achieve 2-5% Alpha with AI">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">📊</span>
+            <span class="brand-name">SentinelQuant</span>
+        </div>
+        <div class="nav-links">
+            <a href="#dashboard" class="nav-link active" data-section="dashboard">Dashboard</a>
+            <a href="#sentiment" class="nav-link" data-section="sentiment">Sentiment</a>
+            <a href="#portfolio" class="nav-link" data-section="portfolio">Portfolio</a>
+            <a href="#backtest" class="nav-link" data-section="backtest">Backtest</a>
+            <a href="#news" class="nav-link" data-section="news">News</a>
+        </div>
+        <div class="nav-auth">
+            <button id="loginBtn" class="btn btn-outline">Login</button>
+            <button id="signupBtn" class="btn btn-primary">Sign Up</button>
+        </div>
+    </nav>
+
+    <!-- Live Sentiment Ticker -->
+    <div class="sentiment-ticker">
+        <div class="ticker-content" id="tickerContent">
+            <span class="ticker-item positive">AAPL: +0.72 🟢</span>
+            <span class="ticker-item negative">TSLA: -0.45 🔴</span>
+            <span class="ticker-item positive">NVDA: +0.88 🟢</span>
+            <span class="ticker-item neutral">MSFT: +0.12 ⚪</span>
+            <span class="ticker-item positive">GOOGL: +0.55 🟢</span>
+            <span class="ticker-item negative">META: -0.32 🔴</span>
+            <span class="ticker-item positive">AMZN: +0.41 🟢</span>
+            <span class="ticker-item neutral">JPM: +0.08 ⚪</span>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="section active">
+            <div class="section-header">
+                <h1>Portfolio Dashboard</h1>
+                <p class="subtitle">AI-driven insights powered by FinBERT sentiment analysis</p>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon green">📈</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="portfolioValue">$12,450.00</span>
+                        <span class="stat-label">Portfolio Value</span>
+                    </div>
+                    <span class="stat-change positive">+24.5%</span>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon blue">🎯</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="alphaValue">+3.2%</span>
+                        <span class="stat-label">Alpha (vs S&P 500)</span>
+                    </div>
+                    <span class="stat-change positive">Target: 2-5%</span>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon purple">📊</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="sharpeValue">1.45</span>
+                        <span class="stat-label">Sharpe Ratio</span>
+                    </div>
+                    <span class="stat-change positive">Target: >1.2</span>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon orange">📰</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="newsCount">2,847</span>
+                        <span class="stat-label">Articles Analyzed</span>
+                    </div>
+                    <span class="stat-change neutral">Last 24h</span>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-row">
+                <div class="chart-card large">
+                    <div class="chart-header">
+                        <h3>Portfolio Performance vs Benchmark</h3>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="dot green"></span> Portfolio</span>
+                            <span class="legend-item"><span class="dot gray"></span> S&P 500</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Asset Allocation</h3>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="allocationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sentiment Heatmap -->
+            <div class="heatmap-card">
+                <div class="chart-header">
+                    <h3>🔥 Sentiment Heatmap</h3>
+                    <span class="badge">Live</span>
+                </div>
+                <div class="heatmap-grid" id="heatmapGrid">
+                    <!-- Generated by JavaScript -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Sentiment Section -->
+        <section id="sentiment" class="section">
+            <div class="section-header">
+                <h1>Sentiment Analysis</h1>
+                <p class="subtitle">Real-time FinBERT-powered financial sentiment</p>
+            </div>
+
+            <div class="sentiment-controls">
+                <select id="sentimentTimeframe" class="select-input">
+                    <option value="1">Last 24 Hours</option>
+                    <option value="7" selected>Last 7 Days</option>
+                    <option value="30">Last 30 Days</option>
+                </select>
+                <button class="btn btn-primary" id="refreshSentiment">🔄 Refresh</button>
+            </div>
+
+            <div class="sentiment-table-container">
+                <table class="data-table" id="sentimentTable">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Company</th>
+                            <th>Sentiment Score</th>
+                            <th>Signal</th>
+                            <th>Articles</th>
+                            <th>Trend</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sentimentTableBody">
+                        <!-- Generated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Portfolio Section -->
+        <section id="portfolio" class="section">
+            <div class="section-header">
+                <h1>Portfolio Management</h1>
+                <p class="subtitle">Sentiment-driven dynamic rebalancing</p>
+            </div>
+
+            <div class="portfolio-actions">
+                <button class="btn btn-primary" id="initPortfolioBtn">🚀 Initialize Portfolio</button>
+                <button class="btn btn-secondary" id="rebalanceBtn">⚖️ Rebalance (Preview)</button>
+                <button class="btn btn-success" id="executeRebalanceBtn">✅ Execute Rebalance</button>
+            </div>
+
+            <div class="portfolio-grid">
+                <div class="holdings-card">
+                    <h3>Current Holdings</h3>
+                    <div class="holdings-list" id="holdingsList">
+                        <!-- Generated by JavaScript -->
+                    </div>
+                </div>
+                <div class="trades-card">
+                    <h3>Suggested Trades</h3>
+                    <div class="trades-list" id="tradesList">
+                        <p class="empty-state">Click "Rebalance" to see suggested trades</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Backtest Section -->
+        <section id="backtest" class="section">
+            <div class="section-header">
+                <h1>Backtesting Simulator</h1>
+                <p class="subtitle">Validate strategy with 5-year historical data</p>
+            </div>
+
+            <div class="backtest-form">
+                <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="date" id="backtestStart" value="2020-01-01" class="input">
+                </div>
+                <div class="form-group">
+                    <label>End Date</label>
+                    <input type="date" id="backtestEnd" class="input">
+                </div>
+                <div class="form-group">
+                    <label>Initial Capital ($)</label>
+                    <input type="number" id="backtestCapital" value="10000" class="input">
+                </div>
+                <button class="btn btn-primary" id="runBacktestBtn">🚀 Run Backtest</button>
+            </div>
+
+            <div class="backtest-results" id="backtestResults" style="display: none;">
+                <div class="results-summary">
+                    <div class="result-item">
+                        <span class="result-label">Final Value</span>
+                        <span class="result-value" id="btFinalValue">$0</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Total Return</span>
+                        <span class="result-value positive" id="btTotalReturn">0%</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">CAGR</span>
+                        <span class="result-value" id="btCAGR">0%</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Sharpe Ratio</span>
+                        <span class="result-value" id="btSharpe">0</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Alpha</span>
+                        <span class="result-value positive" id="btAlpha">0%</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Max Drawdown</span>
+                        <span class="result-value negative" id="btDrawdown">0%</span>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Equity Curve</h3>
+                    <div class="chart-container">
+                        <canvas id="equityCurveChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- News Section -->
+        <section id="news" class="section">
+            <div class="section-header">
+                <h1>Live News Feed</h1>
+                <p class="subtitle">5,000+ articles analyzed daily with sentiment scoring</p>
+            </div>
+
+            <div class="news-controls">
+                <select id="newsSource" class="select-input">
+                    <option value="">All Sources</option>
+                    <option value="newsapi">NewsAPI</option>
+                    <option value="yahoo_finance">Yahoo Finance</option>
+                    <option value="reddit_wallstreetbets">Reddit WSB</option>
+                </select>
+                <button class="btn btn-secondary" id="scrapeNewsBtn">📥 Scrape News</button>
+                <button class="btn btn-primary" id="analyzeNewsBtn">🧠 Analyze</button>
+            </div>
+
+            <div class="news-feed" id="newsFeed">
+                <!-- Generated by JavaScript -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Auth Modal -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <button class="modal-close" id="closeModal">&times;</button>
+            <h2 id="authModalTitle">Login</h2>
+            <form id="authForm">
+                <div class="form-group" id="nameGroup" style="display: none;">
+                    <label>Name</label>
+                    <input type="text" id="authName" class="input" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="authEmail" class="input" placeholder="you@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="authPassword" class="input" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" id="authSubmitBtn">Login</button>
+            </form>
+            <p class="auth-switch">
+                <span id="authSwitchText">Don't have an account?</span>
+                <a href="#" id="authSwitchLink">Sign up</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
