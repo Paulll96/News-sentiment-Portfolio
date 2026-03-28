@@ -29,7 +29,7 @@ function ChartTooltip({ active, payload, label }) {
             <div style={{ color: '#94a3b8', marginBottom: 4 }}>{label}</div>
             {payload.map((p, i) => (
                 <div key={i} style={{ color: p.color || p.payload?.fill }}>
-                    {p.name}: ${p.value?.toLocaleString()}
+                    {p.name}: {formatCurrency(p.value)}
                 </div>
             ))}
         </div>
@@ -90,7 +90,7 @@ export default function Dashboard() {
             .catch(err => {
                 console.error('Dashboard fetch error:', err);
                 setError(err.message);
-                setData({ stats: { totalValue: 0, totalReturn: '0', sharpeRatio: '0', articlesAnalyzed: 0, holdingsCount: 0 }, allocation: [], heatmap: [], perfHistory: [], hasPortfolio: false });
+                setData({ stats: { totalValue: 0, costBasis: 0, totalReturn: '0', sharpeRatio: null, articlesAnalyzed: 0, holdingsCount: 0 }, allocation: [], heatmap: [], perfHistory: [], hasPortfolio: false, currency: 'INR' });
             });
     }, [user]);
 
@@ -136,6 +136,19 @@ export default function Dashboard() {
 
     const { stats, allocation, heatmap, perfHistory, hasPortfolio } = data;
 
+    // Build a dynamic cost basis label
+    const costBasisLabel = hasPortfolio && stats.costBasis > 0
+        ? `vs ${formatCurrency(stats.costBasis)} invested`
+        : 'No cost basis';
+
+    // Sharpe display
+    const sharpeDisplay = stats.sharpeRatio !== null && stats.sharpeRatio !== undefined
+        ? String(stats.sharpeRatio)
+        : '—';
+    const sharpeSubtext = stats.sharpeRatio !== null && stats.sharpeRatio !== undefined
+        ? 'Target: >1.2'
+        : 'Insufficient history';
+
     return (
         <div className="page-enter">
             <div className="page-header">
@@ -156,15 +169,15 @@ export default function Dashboard() {
                     <StatCard icon="🎯" color="blue"
                         value={hasPortfolio ? `${stats.totalReturn > 0 ? '+' : ''}${stats.totalReturn}%` : '—'}
                         label="Total Return"
-                        change="vs $10k initial"
+                        change={costBasisLabel}
                         changeType={parseFloat(stats.totalReturn) > 0 ? 'positive' : parseFloat(stats.totalReturn) < 0 ? 'negative' : 'neutral'} />
                 </div>
                 <div className="col-span-3">
                     <StatCard icon="📊" color="purple"
-                        value={hasPortfolio ? stats.sharpeRatio : '—'}
+                        value={hasPortfolio ? sharpeDisplay : '—'}
                         label="Sharpe Ratio"
-                        change="Target: >1.2"
-                        changeType={parseFloat(stats.sharpeRatio) > 1.2 ? 'positive' : 'neutral'} />
+                        change={sharpeSubtext}
+                        changeType={stats.sharpeRatio !== null && parseFloat(stats.sharpeRatio) > 1.2 ? 'positive' : 'neutral'} />
                 </div>
                 <div className="col-span-3">
                     <StatCard icon="📰" color="orange"
@@ -193,14 +206,14 @@ export default function Dashboard() {
                                         </linearGradient>
                                     </defs>
                                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 11 }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 11 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                                     <Tooltip content={<ChartTooltip />} />
                                     <Area type="monotone" dataKey="portfolio" stroke="#22d3a7" strokeWidth={2} fill="url(#gradPortfolio)" name="Portfolio" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         ) : (
                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-                                Initialize your portfolio to see performance data
+                                Add holdings to your portfolio to see performance data
                             </div>
                         )}
                     </div>
@@ -241,7 +254,7 @@ export default function Dashboard() {
                         ) : (
                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', flexDirection: 'column', gap: 8 }}>
                                 <span>No holdings yet</span>
-                                <Link to="/portfolio" className="btn btn-primary" style={{ fontSize: 12 }}>Initialize Portfolio</Link>
+                                <Link to="/portfolio" className="btn btn-primary" style={{ fontSize: 12 }}>Add Holdings</Link>
                             </div>
                         )}
                     </div>

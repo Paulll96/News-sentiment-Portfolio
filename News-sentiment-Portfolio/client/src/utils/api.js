@@ -40,7 +40,7 @@ export async function apiRequest(endpoint, options = {}) {
     return data;
 }
 
-export function formatCurrency(v, currency = 'USD', locale = 'en-US') {
+export function formatCurrency(v, currency = 'INR', locale = 'en-IN') {
     return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(v);
 }
 

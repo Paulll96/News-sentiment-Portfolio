@@ -35,12 +35,20 @@ const socialItems = [
 ];
 
 function AppShell() {
-  const [authOpen, setAuthOpen] = useState(false);
+  const [authModal, setAuthModal] = useState({ open: false, mode: 'login' });
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const handleMenuItemClick = (item) => {
     navigate(item.link);
+  };
+
+  const openAuthModal = (mode) => {
+    setAuthModal({ open: true, mode });
+  };
+
+  const closeAuthModal = () => {
+    setAuthModal((current) => ({ ...current, open: false }));
   };
 
   return (
@@ -120,8 +128,8 @@ function AppShell() {
               </>
             ) : (
               <>
-                <button className="btn btn-ghost" onClick={() => setAuthOpen(true)}>Login</button>
-                <button className="btn btn-primary" onClick={() => setAuthOpen(true)}>Sign Up</button>
+                <button className="btn btn-ghost" onClick={() => openAuthModal('login')}>Login</button>
+                <button className="btn btn-primary" onClick={() => openAuthModal('signup')}>Sign Up</button>
               </>
             )}
           </div>
@@ -143,7 +151,12 @@ function AppShell() {
         </div>
       </div>
 
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <AuthModal
+        open={authModal.open}
+        mode={authModal.mode}
+        onModeChange={(mode) => setAuthModal((current) => ({ ...current, mode }))}
+        onClose={closeAuthModal}
+      />
     </div>
   );
 }

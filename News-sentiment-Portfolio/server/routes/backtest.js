@@ -70,7 +70,7 @@ router.post('/run', authenticateToken, async (req, res) => {
         let currentValue = initialCapital;
         let peak = initialCapital;
         let maxDrawdown = 0;
-        const equityCurve = [{ date: start.toISOString().split('T')[0], value: initialCapital, benchmark: initialCapital }];
+        const equityCurve = [{ date: start.toISOString().split('T')[0], portfolio: initialCapital, benchmark: initialCapital }];
         const monthlyReturns = [];
 
         for (let i = 1; i <= months; i++) {
@@ -119,7 +119,7 @@ router.post('/run', authenticateToken, async (req, res) => {
             date.setMonth(date.getMonth() + i);
             equityCurve.push({
                 date: date.toISOString().split('T')[0],
-                value: Math.round(currentValue * 100) / 100,
+                portfolio: Math.round(currentValue * 100) / 100,
                 benchmark: Math.round(initialCapital * Math.pow(1.10, i / 12) * 100) / 100 // 10% annual benchmark
             });
         }

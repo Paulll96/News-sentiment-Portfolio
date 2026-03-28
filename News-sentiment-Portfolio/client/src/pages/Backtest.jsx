@@ -111,8 +111,8 @@ export default function Backtest() {
                         </div>
                     </div>
                     {result ? (
-                        <div className="chart-area tall" style={{ height: '100%' }}>
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="chart-area tall" style={{ height: 420 }}>
+                            <ResponsiveContainer width="100%" height={400}>
                                 <AreaChart data={result.equityCurve}>
                                     <defs>
                                         <linearGradient id="gradBt" x1="0" y1="0" x2="0" y2="1">

@@ -23,6 +23,7 @@ const usersRoutes = require('./routes/users');
 const watchlistRoutes = require('./routes/watchlist');
 const notificationsRoutes = require('./routes/notifications');
 const twoFactorRoutes = require('./routes/twoFactor');
+const { getQuoteEngineStatus } = require('./services/quoteService');
 
 // Import database and socket
 const db = require('./db');
@@ -100,6 +101,7 @@ app.get('/api/health', async (req, res) => {
         dbStatus = 'operational';
     } catch { /* leave as unreachable */ }
 
+    const quoteEngine = getQuoteEngineStatus();
     const healthy = dbStatus === 'operational';
     res.status(healthy ? 200 : 503).json({
         status: healthy ? 'healthy' : 'degraded',
@@ -108,7 +110,8 @@ app.get('/api/health', async (req, res) => {
         services: {
             api: 'operational',
             database: dbStatus,
-            sentiment_engine: process.env.HUGGINGFACE_API_KEY ? 'configured' : 'mock_mode'
+            sentiment_engine: process.env.HUGGINGFACE_API_KEY ? 'configured' : 'mock_mode',
+            quote_engine: quoteEngine.status,
         }
     });
 });

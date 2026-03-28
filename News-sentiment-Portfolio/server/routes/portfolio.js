@@ -166,10 +166,31 @@ router.post('/rebalance', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: result.error });
         }
 
-        res.json({
+        const response = {
             message: dryRun ? 'Rebalance preview (no trades executed)' : 'Rebalance executed',
             ...result
-        });
+        };
+
+        // On execute, format updated holdings in the same shape as GET /portfolio
+        if (!dryRun && result.updatedHoldings) {
+            const totalValue = result.updatedHoldings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
+            response.holdings = result.updatedHoldings.map(h => ({
+                symbol: h.symbol,
+                name: h.name,
+                exchange: h.exchange,
+                currency: h.currency || 'INR',
+                shares: parseFloat(h.shares),
+                avgCost: h.avg_cost !== null ? parseFloat(h.avg_cost) : null,
+                currentValue: parseFloat(h.current_value),
+                weight: parseFloat(h.weight) * 100,
+                sentimentScore: parseFloat(h.sentiment_score),
+                signal: classifySignal(h.sentiment_score)
+            }));
+            response.currency = 'INR';
+            delete response.updatedHoldings; // Don't send raw DB rows
+        }
+
+        res.json(response);
     } catch (error) {
         console.error('Rebalance error:', error);
         res.status(500).json({ error: 'Failed to rebalance portfolio' });
@@ -186,7 +207,14 @@ router.get('/performance', authenticateToken, async (req, res) => {
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
 
-        // Get transactions for return calculation
+        // Cost basis from live holdings: sum(shares * avg_cost)
+        const costBasis = holdings.reduce((sum, h) => {
+            const shares = parseFloat(h.shares || 0);
+            const avgCost = parseFloat(h.avg_cost || 0);
+            return sum + (shares * avgCost);
+        }, 0);
+
+        // Get transactions for history
         const txResult = await query(
             `SELECT type, total_value, executed_at
              FROM transactions
@@ -196,30 +224,16 @@ router.get('/performance', authenticateToken, async (req, res) => {
             [req.user.userId]
         );
 
-        // Query actual initial capital: SUM all buy transactions from the initial batch
-        // (init creates N buys in one DB transaction — they share the same executed_at)
-        const initCapResult = await query(
-            `SELECT COALESCE(SUM(t.total_value), 0) as initial_capital
-             FROM transactions t
-             WHERE t.user_id = $1 AND t.type = 'buy'
-               AND t.executed_at = (
-                   SELECT MIN(executed_at) FROM transactions
-                   WHERE user_id = $1 AND type = 'buy'
-               )`,
-            [req.user.userId]
-        );
-        const initialValue = parseFloat(initCapResult.rows[0]?.initial_capital) || 0;
-
-        // Calculate basic metrics
         const transactions = txResult.rows;
-        const totalReturn = initialValue > 0 ? ((totalValue - initialValue) / initialValue) * 100 : 0;
+        const totalReturn = costBasis > 0 ? ((totalValue - costBasis) / costBasis) * 100 : 0;
 
         res.json({
             currentValue: totalValue,
-            initialValue,
+            costBasis,
             totalReturn: totalReturn.toFixed(2),
             transactions: transactions.length,
-            holdings: holdings.length
+            holdings: holdings.length,
+            currency: 'INR',
         });
     } catch (error) {
         console.error('Get performance error:', error);
@@ -264,17 +278,24 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
 
-        // 2. Allocation breakdown for pie chart
+        // 2. Cost basis from live holdings: sum(shares * avg_cost)
+        const costBasis = holdings.reduce((sum, h) => {
+            const shares = parseFloat(h.shares || 0);
+            const avgCost = parseFloat(h.avg_cost || 0);
+            return sum + (shares * avgCost);
+        }, 0);
+
+        // 3. Allocation breakdown for pie chart
         const allocation = holdings.map(h => ({
             name: h.symbol,
             value: parseFloat((parseFloat(h.weight) * 100).toFixed(1)),
         }));
 
-        // 3. Total articles analyzed
+        // 4. Total articles analyzed
         const articlesResult = await query('SELECT COUNT(*) as total FROM news_articles WHERE processed = true');
         const totalArticles = parseInt(articlesResult.rows[0].total) || 0;
 
-        // 4. Sentiment heatmap (held symbols only)
+        // 5. Sentiment heatmap (held symbols only)
         const { getStockSentimentsBySymbols } = require('../services/sentimentService');
         const heldSymbols = [...new Set(
             holdings
@@ -290,8 +311,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             score: sentimentBySymbol.get(symbol) || 0,
         }));
 
-        // 5. Performance history — build equity curve from transactions
-        // 5. Performance history — True Mark-to-Market
+        // 6. Performance history — True Mark-to-Market
         const txResult = await query(
             `SELECT t.type, t.shares, t.executed_at, s.symbol
              FROM transactions t
@@ -300,19 +320,6 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
              ORDER BY t.executed_at ASC`,
             [req.user.userId]
         );
-
-        // Query actual initial capital: SUM all buy transactions from the initial batch
-        const initCapResult = await query(
-            `SELECT COALESCE(SUM(t.total_value), 0) as initial_capital
-             FROM transactions t
-             WHERE t.user_id = $1 AND t.type = 'buy'
-               AND t.executed_at = (
-                   SELECT MIN(executed_at) FROM transactions
-                   WHERE user_id = $1 AND type = 'buy'
-               )`,
-            [req.user.userId]
-        );
-        const initialValue = parseFloat(initCapResult.rows[0]?.initial_capital) || 0;
 
         const txHistory = txResult.rows;
         const uniqueSymbols = [...new Set(txHistory.map(tx => tx.symbol))];
@@ -356,24 +363,26 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             }
 
             // Calculate MTM value using historical prices
-            let dayHasData = false;
+            let dayHasValidPrice = false;
             for (const [symbol, shares] of Object.entries(currentShares)) {
                 if (shares <= 0.0001) continue; // Ignore negligible fractional dust
 
                 let price = historicalPrices[symbol]?.[dateStrYYYYMMDD];
-                if (price !== undefined) {
+                if (price !== undefined && price > 0) {
                     lastKnownPrices[symbol] = price;
+                    dayHasValidPrice = true;
                 } else {
                     price = lastKnownPrices[symbol] || 0; // Use last known if weekend/holiday
+                    if (price > 0) dayHasValidPrice = true;
                 }
 
                 if (price > 0) {
                     dailyEquity += (shares * price);
-                    dayHasData = true;
                 }
             }
 
-            if (dayHasData || Object.keys(currentShares).length > 0) {
+            // Only include days where we have real price data
+            if (dayHasValidPrice && dailyEquity > 0) {
                 perfHistory.push({
                     date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                     portfolio: Math.round(dailyEquity)
@@ -381,7 +390,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             }
         }
 
-        // Ensure at least today's actual value is in the chart if it's perfectly flat
+        // Ensure at least today's actual value is in the chart
         if (perfHistory.length === 0 && totalValue > 0) {
             perfHistory.push({
                 date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -389,24 +398,41 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             });
         }
 
-        // 6. Calculate basic metrics
-        const totalReturn = totalValue > 0 ? ((totalValue - initialValue) / initialValue * 100) : 0;
+        // 7. Calculate Total Return from cost basis
+        const totalReturn = costBasis > 0 ? ((totalValue - costBasis) / costBasis * 100) : 0;
 
-        // Approximate Sharpe (simplified — from available data)
-        const monthlyReturns = perfHistory.map((p, i) =>
-            i > 0 ? (p.portfolio - perfHistory[i - 1].portfolio) / perfHistory[i - 1].portfolio : 0
-        ).slice(1);
-        const avgReturn = monthlyReturns.length > 0 ? monthlyReturns.reduce((a, b) => a + b, 0) / monthlyReturns.length : 0;
-        const stdDev = monthlyReturns.length > 1
-            ? Math.sqrt(monthlyReturns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / monthlyReturns.length)
-            : 1;
-        const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(12) : 0;
+        // 8. Sharpe Ratio — only from valid daily equity points with non-zero prices
+        // Need at least 3 valid data points to compute a meaningful ratio
+        let sharpeRatio = null;
+        if (perfHistory.length >= 3) {
+            const dailyReturns = perfHistory
+                .map((p, i) => i > 0 && perfHistory[i - 1].portfolio > 0
+                    ? (p.portfolio - perfHistory[i - 1].portfolio) / perfHistory[i - 1].portfolio
+                    : null)
+                .filter(r => r !== null);
+
+            if (dailyReturns.length >= 2) {
+                const avgReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+                const stdDev = Math.sqrt(
+                    dailyReturns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / dailyReturns.length
+                );
+
+                if (stdDev > 0.0001) {
+                    // Annualize: sqrt(252) for daily returns
+                    sharpeRatio = parseFloat(((avgReturn / stdDev) * Math.sqrt(252)).toFixed(2));
+                } else {
+                    // Zero volatility — returns are flat, Sharpe is undefined
+                    sharpeRatio = null;
+                }
+            }
+        }
 
         res.json({
             stats: {
                 totalValue: totalValue || 0,
+                costBasis: costBasis || 0,
                 totalReturn: totalReturn.toFixed(2),
-                sharpeRatio: sharpeRatio.toFixed(2),
+                sharpeRatio,
                 articlesAnalyzed: totalArticles,
                 holdingsCount: holdings.length,
             },
@@ -414,6 +440,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             heatmap,
             perfHistory,
             hasPortfolio: holdings.length > 0,
+            currency: 'INR',
         });
     } catch (error) {
         console.error('Dashboard data error:', error);

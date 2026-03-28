@@ -1,6 +1,13 @@
 const { query, transaction } = require('../db');
 const { getAllStockSentiments, getStockSentimentsBySymbols } = require('./sentimentService');
-const { getQuoteForStock, getLiveQuoteBySymbol, getQuotesForStocks } = require('./quoteService');
+const {
+    getQuoteForStock,
+    getQuoteForStockDetailed,
+    getLiveQuoteBySymbol,
+    getLiveQuoteBySymbolDetailed,
+    getQuotesForStocks,
+    QUOTE_PROVIDER_UNAVAILABLE,
+} = require('./quoteService');
 const { ensureNseSymbolSuffix, findInstrument } = require('./instrumentService');
 
 // Rebalancing parameters
@@ -31,55 +38,84 @@ const ADD_HOLDING_STRATEGIES = {
     ADD_ONLY: 'add_only',
 };
 
-/**
- * Calculate target portfolio weights based on sentiment
- * @param {Array} sentiments - Array of {symbol, wss, articleCount, ...}
- * @returns {Object} - { symbol: targetWeight }
- */
 function calculateTargetWeights(sentiments) {
     if (!Array.isArray(sentiments) || sentiments.length === 0) {
         return {};
     }
 
-    const activeStocks = sentiments.filter(s => s.articleCount > 0);
+    const equalWeight = 1 / sentiments.length;
+    const maxWeight = Math.max(0.01, CONFIG.maxPositionPercent / 100);
+    const unnormalizedWeights = {};
+    let totalUnnormalized = 0;
 
-    if (activeStocks.length === 0) {
-        const equalWeight = 1 / sentiments.length;
+    sentiments.forEach(s => {
+        // If no articles exist, sentiment should functionally be neutral (wss = 0)
+        const effectiveWss = s.articleCount > 0 ? s.wss : 0;
+        
+        // Calculate scaling factor. e.g. WSS 1.0 => +60%, WSS -1.0 => -60%, WSS 0 => 0% change
+        const factor = 1 + (effectiveWss * CONFIG.sentimentWeight);
+        
+        const weight = equalWeight * factor;
+        unnormalizedWeights[s.symbol] = Math.max(0, weight);
+        totalUnnormalized += unnormalizedWeights[s.symbol];
+    });
+
+    const targetWeights = {};
+
+    // Initial normalization
+    if (totalUnnormalized > 0) {
+        Object.keys(unnormalizedWeights).forEach(symbol => {
+            targetWeights[symbol] = unnormalizedWeights[symbol] / totalUnnormalized;
+        });
+    } else {
         return Object.fromEntries(sentiments.map(s => [s.symbol, equalWeight]));
     }
 
-    // Normalize WSS to positive values for weighting
-    const normalizedScores = activeStocks.map(s => ({
-        symbol: s.symbol,
-        score: (s.wss + 1) / 2, // Convert [-1, 1] to [0, 1]
-    }));
+    // Iteratively enforce maxPositionPercent limit and redistribute excess proportionally
+    let needsCapping = true;
+    let iterations = 0;
+    
+    // Stop at 10 iterations to prevent infinite loops in impossible edge cases
+    while (needsCapping && iterations < 10) {
+        needsCapping = false;
+        let excessWeight = 0;
+        let uncappedSymbols = [];
+        
+        Object.keys(targetWeights).forEach(symbol => {
+            if (targetWeights[symbol] > maxWeight) {
+                // Excess logic
+                excessWeight += (targetWeights[symbol] - maxWeight);
+                targetWeights[symbol] = maxWeight;
+                needsCapping = true;
+            } else if (targetWeights[symbol] < maxWeight) {
+                uncappedSymbols.push(symbol);
+            }
+        });
+        
+        if (needsCapping && uncappedSymbols.length > 0) {
+            const sumUncapped = uncappedSymbols.reduce((sum, sym) => sum + targetWeights[sym], 0);
+            if (sumUncapped > 0) {
+                uncappedSymbols.forEach(sym => {
+                    const proportion = targetWeights[sym] / sumUncapped;
+                    targetWeights[sym] += excessWeight * proportion;
+                });
+            } else {
+                // Fallback identical distribution
+                uncappedSymbols.forEach(sym => {
+                    targetWeights[sym] += excessWeight / uncappedSymbols.length;
+                });
+            }
+        }
+        iterations++;
+    }
 
-    const totalScore = normalizedScores.reduce((sum, s) => sum + s.score, 0);
-
-    // Calculate sentiment-based weights
-    const sentimentWeights = {};
-    normalizedScores.forEach(s => {
-        sentimentWeights[s.symbol] = s.score / totalScore;
-    });
-
-    // Blend with equal weight
-    const equalWeight = 1 / sentiments.length;
-    const targetWeights = {};
-
-    sentiments.forEach(s => {
-        const sentWeight = sentimentWeights[s.symbol] || equalWeight;
-        const blendedWeight = CONFIG.sentimentWeight * sentWeight +
-            (1 - CONFIG.sentimentWeight) * equalWeight;
-
-        // Apply max position limit
-        targetWeights[s.symbol] = Math.min(blendedWeight, CONFIG.maxPositionPercent / 100);
-    });
-
-    // Normalize to sum to 1
-    const totalWeight = Object.values(targetWeights).reduce((a, b) => a + b, 0);
-    Object.keys(targetWeights).forEach(symbol => {
-        targetWeights[symbol] /= totalWeight;
-    });
+    // Final precision normalization to ensure exactly 100.0% sum
+    const finalSum = Object.values(targetWeights).reduce((sum, w) => sum + w, 0);
+    if (finalSum > 0) {
+        Object.keys(targetWeights).forEach(symbol => {
+            targetWeights[symbol] /= finalSum;
+        });
+    }
 
     return targetWeights;
 }
@@ -307,18 +343,37 @@ async function evaluateHoldingRows(rawRows, options = {}) {
         }
 
         let quote = null;
+        let quoteError = null;
         if (stockLookup.stock.id) {
-            quote = await getQuoteForStock(stockLookup.stock, {
+            const quoteResult = await getQuoteForStockDetailed(stockLookup.stock, {
                 maxAgeMinutes: CONFIG.quoteCacheMinutes,
             });
+            quote = quoteResult.quote;
+            quoteError = quoteResult.error;
         } else {
-            quote = await getLiveQuoteBySymbol(stockLookup.stock.symbol, stockLookup.stock.currency || 'INR');
+            const quoteResult = await getLiveQuoteBySymbolDetailed(
+                stockLookup.stock.symbol,
+                stockLookup.stock.currency || 'INR'
+            );
+            quote = quoteResult.quote;
+            quoteError = quoteResult.error;
         }
 
         const fallbackPrice = row.avgCost || null;
         const unitPrice = quote?.price || fallbackPrice;
 
         if (!unitPrice || unitPrice <= 0) {
+            if (quoteError?.code === QUOTE_PROVIDER_UNAVAILABLE) {
+                rejected.push({
+                    symbol: row.symbol,
+                    exchange: row.exchange,
+                    error: 'Live quote service is currently unavailable and avgCost is missing',
+                    code: QUOTE_PROVIDER_UNAVAILABLE,
+                    field: 'avgCost'
+                });
+                continue;
+            }
+
             rejected.push({
                 symbol: row.symbol,
                 exchange: row.exchange,
@@ -479,6 +534,7 @@ async function addHolding(userId, payload) {
     if (evaluation.rejected.length > 0 || evaluation.accepted.length === 0) {
         return {
             error: evaluation.rejected[0]?.error || 'Invalid holding payload',
+            code: evaluation.rejected[0]?.code,
             details: evaluation.rejected,
         };
     }
@@ -730,6 +786,14 @@ async function rebalancePortfolio(userId, dryRun = true) {
         return { error: 'Empty portfolio', trades: [] };
     }
 
+    // Build a price snapshot from the already-refreshed holdings (no extra API calls)
+    const priceSnapshot = {};
+    holdings.forEach(h => {
+        const shares = parseFloat(h.shares || 0);
+        const value = parseFloat(h.current_value || 0);
+        priceSnapshot[h.symbol] = shares > 0 ? value / shares : parseFloat(h.avg_cost || 0);
+    });
+
     // Get current weights
     const currentWeights = {};
     holdings.forEach(h => {
@@ -784,7 +848,14 @@ async function rebalancePortfolio(userId, dryRun = true) {
 
     // Execute trades if not dry run
     if (!dryRun && trades.length > 0) {
-        await executeTrades(userId, trades, portfolioValue);
+        await executeTrades(userId, trades, portfolioValue, priceSnapshot);
+    }
+
+    // After execution, return updated holdings so the frontend can update directly
+    let updatedHoldings = null;
+    if (!dryRun) {
+        const freshHoldings = await getPortfolioHoldings(userId);
+        updatedHoldings = freshHoldings;
     }
 
     return {
@@ -793,16 +864,18 @@ async function rebalancePortfolio(userId, dryRun = true) {
         targetWeights,
         trades,
         dryRun,
+        updatedHoldings,
     };
 }
 
 /**
  * Execute trades - creates explicit buy/sell transactions
+ * Uses pre-fetched priceSnapshot so no network calls happen inside the DB transaction.
  */
-async function executeTrades(userId, trades, portfolioValue) {
+async function executeTrades(userId, trades, portfolioValue, priceSnapshot) {
     await transaction(async (client) => {
         for (const trade of trades) {
-            // Get stock ID
+            // Get stock ID and current holding
             const stockResult = await client.query(
                 'SELECT id FROM stocks WHERE symbol = $1',
                 [trade.symbol]
@@ -812,28 +885,79 @@ async function executeTrades(userId, trades, portfolioValue) {
 
             const stockId = stockResult.rows[0].id;
             const tradeValue = parseFloat(trade.tradeValue);
-            const quote = await getLiveQuoteBySymbol(trade.symbol, 'INR');
-            const approxPrice = quote && quote.price > 0 ? quote.price : (tradeValue > 0 ? tradeValue : 1);
-            const approxShares = tradeValue / approxPrice;
 
+            // Use price from the pre-fetched snapshot — no live API call here
+            const approxPrice = (priceSnapshot[trade.symbol] && priceSnapshot[trade.symbol] > 0)
+                ? priceSnapshot[trade.symbol]
+                : (tradeValue > 0 ? tradeValue : 1);
+            const deltaShares = tradeValue / approxPrice;
+
+            // Record the transaction
             await client.query(
                 `INSERT INTO transactions (user_id, stock_id, type, shares, price, total_value, reason)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [userId, stockId, trade.type, approxShares, approxPrice, tradeValue,
+                [userId, stockId, trade.type, deltaShares, approxPrice, tradeValue,
                     `Rebalance: ${trade.reason}`]
+            );
+
+            // Get existing holding to compute new shares and avg_cost
+            const holdingResult = await client.query(
+                `SELECT id, shares, avg_cost FROM portfolio_holdings
+                 WHERE user_id = $1 AND stock_id = $2
+                 LIMIT 1`,
+                [userId, stockId]
             );
 
             const newWeight = parseFloat(trade.targetWeight) / 100;
             const newValue = portfolioValue * newWeight;
 
-            await client.query(
-                `INSERT INTO portfolio_holdings (user_id, stock_id, shares, current_value, weight, sentiment_score)
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (user_id, stock_id)
-                 DO UPDATE SET current_value = $4, weight = $5, sentiment_score = $6, updated_at = NOW()`,
-                [userId, stockId, approxShares, newValue, newWeight, parseFloat(trade.sentiment)]
-            );
+            if (holdingResult.rows.length > 0) {
+                const existingShares = parseFloat(holdingResult.rows[0].shares || 0);
+                const existingAvgCost = parseFloat(holdingResult.rows[0].avg_cost || 0);
+                let updatedShares;
+                let updatedAvgCost = existingAvgCost;
+
+                if (trade.type === 'buy') {
+                    updatedShares = existingShares + deltaShares;
+                    // Weighted average cost basis update
+                    if (existingShares > 0 && existingAvgCost > 0) {
+                        updatedAvgCost = ((existingShares * existingAvgCost) + (deltaShares * approxPrice)) / updatedShares;
+                    } else {
+                        updatedAvgCost = approxPrice;
+                    }
+                } else {
+                    updatedShares = existingShares - deltaShares;
+                    // avg_cost stays the same on sells
+                }
+
+                // If shares drop to near zero, remove the holding
+                if (updatedShares < 0.0001) {
+                    await client.query(
+                        `DELETE FROM portfolio_holdings WHERE id = $1`,
+                        [holdingResult.rows[0].id]
+                    );
+                } else {
+                    await client.query(
+                        `UPDATE portfolio_holdings
+                         SET shares = $3, avg_cost = $4, current_value = $5, weight = $6, sentiment_score = $7, updated_at = NOW()
+                         WHERE user_id = $1 AND stock_id = $2`,
+                        [userId, stockId, updatedShares, updatedAvgCost, newValue, newWeight, parseFloat(trade.sentiment)]
+                    );
+                }
+            } else {
+                // No existing holding — only create if buying
+                if (trade.type === 'buy') {
+                    await client.query(
+                        `INSERT INTO portfolio_holdings (user_id, stock_id, shares, avg_cost, current_value, weight, sentiment_score)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                        [userId, stockId, deltaShares, approxPrice, newValue, newWeight, parseFloat(trade.sentiment)]
+                    );
+                }
+            }
         }
+
+        // Recalculate weights after all trades
+        await recalcWeights(client, userId);
     });
 
     console.log('\nTrades executed successfully');

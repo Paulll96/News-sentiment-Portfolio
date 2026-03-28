@@ -2,11 +2,73 @@ const axios = require('axios');
 const { query } = require('../db');
 
 const DEFAULT_CACHE_MINUTES = parseInt(process.env.QUOTE_CACHE_MINUTES || '5', 10);
+const QUOTE_PROVIDER_UNAVAILABLE = 'QUOTE_PROVIDER_UNAVAILABLE';
+const PLACEHOLDER_QUOTE_KEYS = [
+    'your_quote_api_key_here',
+    'your_api_key_here',
+    'replace_me',
+    'replace-with-real-key',
+    'replace_with_real_key',
+    'changeme',
+    'dummy',
+    'test',
+    'null',
+    'undefined',
+];
+
+function normalizeEnvValue(value) {
+    return String(value || '').trim();
+}
+
+function hasConfiguredQuoteApiKey(value = process.env.QUOTE_API_KEY) {
+    const raw = normalizeEnvValue(value);
+    if (!raw) return false;
+
+    const lowered = raw.toLowerCase();
+    if (PLACEHOLDER_QUOTE_KEYS.includes(lowered)) {
+        return false;
+    }
+
+    if (lowered.includes('your_quote_api_key') || lowered.includes('your_api_key') || lowered.includes('xxxxxxxx')) {
+        return false;
+    }
+
+    return true;
+}
+
+function createQuoteProviderError(message, provider, providerStatus = 'unavailable') {
+    const error = new Error(message);
+    error.code = QUOTE_PROVIDER_UNAVAILABLE;
+    error.provider = provider;
+    error.providerStatus = providerStatus;
+    return error;
+}
+
+function isAuthFailure(error) {
+    const status = error?.response?.status;
+    return status === 401 || status === 403;
+}
 
 function getProvider() {
-    const configured = (process.env.QUOTE_PROVIDER || '').trim().toLowerCase();
+    const configured = normalizeEnvValue(process.env.QUOTE_PROVIDER).toLowerCase();
     if (configured) return configured;
-    return process.env.QUOTE_API_KEY ? 'twelvedata' : 'yahoo';
+    return hasConfiguredQuoteApiKey() ? 'twelvedata' : 'yahoo';
+}
+
+function getQuoteEngineStatus() {
+    const provider = getProvider();
+
+    if (provider === 'twelvedata') {
+        return {
+            provider,
+            status: hasConfiguredQuoteApiKey() ? 'configured' : 'misconfigured',
+        };
+    }
+
+    return {
+        provider,
+        status: 'unavailable',
+    };
 }
 
 function formatSymbolForProvider(symbol, provider) {
@@ -59,21 +121,45 @@ async function upsertQuote(stockId, quote) {
 }
 
 async function fetchFromTwelveData(symbol, currencyHint) {
-    const apiKey = process.env.QUOTE_API_KEY;
-    if (!apiKey) {
-        return null;
+    const apiKey = normalizeEnvValue(process.env.QUOTE_API_KEY);
+    if (!hasConfiguredQuoteApiKey(apiKey)) {
+        throw createQuoteProviderError(
+            'Live quote provider is not configured with a valid Twelve Data API key.',
+            'twelvedata',
+            'misconfigured'
+        );
     }
 
     const baseUrl = process.env.QUOTE_API_BASE_URL || 'https://api.twelvedata.com';
     const providerSymbol = formatSymbolForProvider(symbol, 'twelvedata');
+    let response;
 
-    const response = await axios.get(`${baseUrl}/price`, {
-        timeout: 12000,
-        params: {
-            symbol: providerSymbol,
-            apikey: apiKey,
-        },
-    });
+    try {
+        response = await axios.get(`${baseUrl}/price`, {
+            timeout: 12000,
+            params: {
+                symbol: providerSymbol,
+                apikey: apiKey,
+            },
+        });
+    } catch (error) {
+        if (isAuthFailure(error)) {
+            throw createQuoteProviderError(
+                'Live quote provider rejected the configured Twelve Data API key.',
+                'twelvedata',
+                'misconfigured'
+            );
+        }
+        throw error;
+    }
+
+    if (response.data?.status === 'error' || response.data?.code === 401) {
+        throw createQuoteProviderError(
+            'Live quote provider rejected the configured Twelve Data API key.',
+            'twelvedata',
+            'misconfigured'
+        );
+    }
 
     const raw = response.data?.price;
     const price = parseFloat(raw);
@@ -90,15 +176,30 @@ async function fetchFromTwelveData(symbol, currencyHint) {
 }
 
 async function fetchFromYahoo(symbol, currencyHint) {
-    const response = await axios.get('https://query1.finance.yahoo.com/v7/finance/quote', {
-        timeout: 12000,
-        params: {
-            symbols: formatSymbolForProvider(symbol, 'yahoo'),
-        },
-        headers: {
-            'User-Agent': 'Mozilla/5.0 SentinelQuant/1.0',
+    let response;
+
+    try {
+        console.log(`[QuoteService] Attempting Yahoo fallback for: ${symbol}`);
+        response = await axios.get('https://query1.finance.yahoo.com/v7/finance/quote', {
+            timeout: 12000,
+            params: {
+                symbols: formatSymbolForProvider(symbol, 'yahoo'),
+            },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 SentinelQuant/1.0',
+            }
+        });
+    } catch (error) {
+        console.warn(`[QuoteService] Yahoo fallback failed for ${symbol}: ${error.message}`);
+        if (isAuthFailure(error)) {
+            throw createQuoteProviderError(
+                'Yahoo live quote fallback is unavailable.',
+                'yahoo',
+                'unavailable'
+            );
         }
-    });
+        throw error;
+    }
 
     const quote = response.data?.quoteResponse?.result?.[0];
     const price = parseFloat(quote?.regularMarketPrice);
@@ -119,51 +220,85 @@ async function fetchFromYahoo(symbol, currencyHint) {
     };
 }
 
-async function fetchLiveQuote(symbol, currencyHint) {
+async function fetchLiveQuoteDetailed(symbol, currencyHint) {
     const provider = getProvider();
+    let providerFailure = null;
 
     try {
         if (provider === 'twelvedata') {
             const quote = await fetchFromTwelveData(symbol, currencyHint);
-            if (quote) return quote;
+            if (quote) return { quote, error: null };
         }
     } catch (error) {
-        console.warn(`Quote provider ${provider} failed for ${symbol}: ${error.message}`);
+        if (error?.code === QUOTE_PROVIDER_UNAVAILABLE) {
+            providerFailure = error;
+        } else {
+            console.warn(`Quote provider ${provider} failed for ${symbol}: ${error.message}`);
+        }
     }
 
     try {
-        return await fetchFromYahoo(symbol, currencyHint);
+        const yahooQuote = await fetchFromYahoo(symbol, currencyHint);
+        if (yahooQuote) {
+            return { quote: yahooQuote, error: null };
+        }
     } catch (error) {
         console.warn(`Yahoo quote failed for ${symbol}: ${error.message}`);
-        return null;
+        if (!providerFailure && error?.code === QUOTE_PROVIDER_UNAVAILABLE) {
+            providerFailure = error;
+        }
     }
+
+    return {
+        quote: null,
+        error: providerFailure,
+    };
 }
 
-async function getQuoteForStock(stock, options = {}) {
+async function fetchLiveQuote(symbol, currencyHint) {
+    const result = await fetchLiveQuoteDetailed(symbol, currencyHint);
+    return result.quote;
+}
+
+async function getQuoteForStockDetailed(stock, options = {}) {
     const maxAgeMinutes = Number.isFinite(options.maxAgeMinutes)
         ? options.maxAgeMinutes
         : DEFAULT_CACHE_MINUTES;
     const forceRefresh = Boolean(options.forceRefresh);
 
-    if (!stock?.id) return null;
+    if (!stock?.id) {
+        return { quote: null, error: null };
+    }
 
     if (!forceRefresh) {
         const cached = await getCachedQuote(stock.id, maxAgeMinutes);
-        if (cached) return cached;
+        if (cached) {
+            return { quote: cached, error: null };
+        }
     }
 
-    const live = await fetchLiveQuote(stock.symbol, stock.currency);
-    if (!live) return null;
+    const liveResult = await fetchLiveQuoteDetailed(stock.symbol, stock.currency);
+    if (!liveResult.quote) {
+        return liveResult;
+    }
 
-    await upsertQuote(stock.id, live);
+    await upsertQuote(stock.id, liveResult.quote);
 
     return {
-        stockId: stock.id,
-        price: live.price,
-        currency: live.currency,
-        source: live.source,
-        asOf: live.asOf,
+        quote: {
+            stockId: stock.id,
+            price: liveResult.quote.price,
+            currency: liveResult.quote.currency,
+            source: liveResult.quote.source,
+            asOf: liveResult.quote.asOf,
+        },
+        error: null,
     };
+}
+
+async function getQuoteForStock(stock, options = {}) {
+    const result = await getQuoteForStockDetailed(stock, options);
+    return result.quote;
 }
 
 async function getQuotesForStocks(stocks, options = {}) {
@@ -181,6 +316,10 @@ async function getQuotesForStocks(stocks, options = {}) {
 
 async function getLiveQuoteBySymbol(symbol, currencyHint = 'INR') {
     return fetchLiveQuote(symbol, currencyHint);
+}
+
+async function getLiveQuoteBySymbolDetailed(symbol, currencyHint = 'INR') {
+    return fetchLiveQuoteDetailed(symbol, currencyHint);
 }
 
 /**
@@ -231,7 +370,12 @@ async function fetchHistoricalPrices(symbols, range = '1mo') {
 
 module.exports = {
     getQuoteForStock,
+    getQuoteForStockDetailed,
     getQuotesForStocks,
     getLiveQuoteBySymbol,
+    getLiveQuoteBySymbolDetailed,
+    getQuoteEngineStatus,
+    hasConfiguredQuoteApiKey,
+    QUOTE_PROVIDER_UNAVAILABLE,
     fetchHistoricalPrices,
 };

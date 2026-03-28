@@ -10,7 +10,7 @@ export default function Sentiment() {
     const [sentiments, setSentiments] = useState(null); // null = loading
     const [timeframe, setTimeframe] = useState('7');
     const [scope, setScope] = useState('portfolio');
-    const [includeIndia, setIncludeIndia] = useState(true);
+    const [includeIndia, setIncludeIndia] = useState(false);
     const toast = useToast();
     const { user } = useAuth();
     const effectiveScope = !user && scope === 'portfolio' ? 'market' : scope;
@@ -79,7 +79,7 @@ export default function Sentiment() {
                             checked={includeIndia}
                             onChange={(e) => setIncludeIndia(e.target.checked)}
                         />
-                        Include symbols with sentiment data (Indian + global)
+                        Also show trending market stocks with sentiment data
                     </label>
                 )}
 

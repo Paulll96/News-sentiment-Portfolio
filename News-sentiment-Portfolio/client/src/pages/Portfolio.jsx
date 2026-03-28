@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { apiRequest, formatCurrency } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -86,7 +86,13 @@ function parseHoldingsCsv(text) {
 
 function extractPortfolioErrorMessage(error, fallback = 'Request failed') {
     const details = Array.isArray(error?.details) ? error.details : [];
+    const providerIssue = error?.code === 'QUOTE_PROVIDER_UNAVAILABLE'
+        || details.some(d => d?.code === 'QUOTE_PROVIDER_UNAVAILABLE');
     const avgCostIssue = details.find(d => d?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || d?.field === 'avgCost');
+
+    if (providerIssue) {
+        return 'Live quote service is currently unavailable. Enter Avg Buy Price and try again.';
+    }
 
     if (error?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || avgCostIssue) {
         const symbol = avgCostIssue?.symbol ? ` for ${avgCostIssue.symbol}` : '';
@@ -98,6 +104,9 @@ function extractPortfolioErrorMessage(error, fallback = 'Request failed') {
 
 function formatRejectedImportRow(row, idx) {
     const label = row?.symbol || `Row ${row?.row || idx + 1}`;
+    if (row?.code === 'QUOTE_PROVIDER_UNAVAILABLE') {
+        return `${label}: Live quote service unavailable. Add avg_cost in CSV and retry.`;
+    }
     if (row?.code === 'AVG_COST_REQUIRED_NO_QUOTE' || row?.field === 'avgCost') {
         return `${label}: Live quote unavailable. Add avg_cost in CSV and retry.`;
     }
@@ -109,7 +118,10 @@ export default function Portfolio() {
     const toast = useToast();
     const [holdings, setHoldings] = useState(null); // null = loading
     const [trades, setTrades] = useState([]);
+    const [hasRunRebalancePreview, setHasRunRebalancePreview] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [executeLoading, setExecuteLoading] = useState(false);
     const [removingSymbol, setRemovingSymbol] = useState('');
 
     const [portfolioCurrency, setPortfolioCurrency] = useState('INR');
@@ -128,9 +140,16 @@ export default function Portfolio() {
 
     const currencyLocale = portfolioCurrency === 'INR' ? 'en-IN' : 'en-US';
 
+    const anyLoading = loading || previewLoading || executeLoading;
+    const resetRebalancePreview = () => {
+        setTrades([]);
+        setHasRunRebalancePreview(false);
+    };
+
     const loadPortfolio = async () => {
         if (!user) {
             setHoldings([]);
+            resetRebalancePreview();
             return;
         }
 
@@ -145,6 +164,7 @@ export default function Portfolio() {
     };
 
     useEffect(() => {
+        resetRebalancePreview();
         loadPortfolio();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user]);
@@ -185,24 +205,6 @@ export default function Portfolio() {
         };
     }, [searchQuery]);
 
-    const handleInit = async () => {
-        if (!user) {
-            toast('Please login first', 'error');
-            return;
-        }
-
-        try {
-            setLoading(true);
-            await apiRequest('/portfolio/initialize', { method: 'POST' });
-            toast('Demo portfolio initialized', 'success');
-            await loadPortfolio();
-        } catch (e) {
-            toast(e.message, 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleRebalance = async () => {
         if (!user) {
             toast('Please login first', 'error');
@@ -210,17 +212,18 @@ export default function Portfolio() {
         }
 
         try {
-            setLoading(true);
+            setPreviewLoading(true);
             const data = await apiRequest('/portfolio/rebalance', {
                 method: 'POST',
                 body: JSON.stringify({ dryRun: true }),
             });
             setTrades(data.trades || []);
+            setHasRunRebalancePreview(true);
             toast('Rebalance preview generated', 'success');
         } catch (e) {
             toast(e.message, 'error');
         } finally {
-            setLoading(false);
+            setPreviewLoading(false);
         }
     };
 
@@ -235,18 +238,26 @@ export default function Portfolio() {
         }
 
         try {
-            setLoading(true);
-            await apiRequest('/portfolio/rebalance', {
+            setExecuteLoading(true);
+            const data = await apiRequest('/portfolio/rebalance', {
                 method: 'POST',
                 body: JSON.stringify({ dryRun: false }),
             });
             toast('Rebalance executed', 'success');
-            setTrades([]);
-            await loadPortfolio();
+            resetRebalancePreview();
+
+            // Use returned holdings directly instead of a full reload
+            if (data.holdings) {
+                setHoldings(data.holdings);
+                if (data.currency) setPortfolioCurrency(data.currency);
+            } else {
+                // Fallback if backend didn't return holdings
+                await loadPortfolio();
+            }
         } catch (e) {
             toast(e.message, 'error');
         } finally {
-            setLoading(false);
+            setExecuteLoading(false);
         }
     };
 
@@ -275,6 +286,7 @@ export default function Portfolio() {
 
         try {
             setLoading(true);
+            resetRebalancePreview();
             const result = await apiRequest('/portfolio/holdings', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -322,7 +334,7 @@ export default function Portfolio() {
                 method: 'DELETE',
             });
             toast(`${normalized} removed from portfolio`, 'success');
-            setTrades([]);
+            resetRebalancePreview();
             await loadPortfolio();
         } catch (e) {
             toast(e.message || `Failed to remove ${normalized}`, 'error');
@@ -404,7 +416,7 @@ export default function Portfolio() {
             setImportOpen(false);
             setImportRows([]);
             setImportPreview(null);
-            setTrades([]);
+            resetRebalancePreview();
             await loadPortfolio();
         } catch (e) {
             toast(extractPortfolioErrorMessage(e, 'Import failed'), 'error');
@@ -427,15 +439,16 @@ export default function Portfolio() {
             ) : (
                 <>
                     <div className="controls-bar">
-                        <button className="btn btn-secondary" onClick={() => setImportOpen(true)} disabled={loading || importLoading}>Import Holdings</button>
-                        <button className="btn btn-secondary" onClick={handleRebalance} disabled={loading}>Rebalance (Preview)</button>
-                        <button className="btn btn-success" onClick={handleExecuteRebalance} disabled={loading || trades.length === 0}>Execute Rebalance</button>
+                        <button className="btn btn-secondary" onClick={() => setImportOpen(true)} disabled={anyLoading || importLoading}>Import Holdings</button>
+                        <button className="btn btn-secondary" onClick={handleRebalance} disabled={anyLoading}>
+                            {previewLoading ? 'Previewing...' : 'Rebalance (Preview)'}
+                        </button>
+                        <button className="btn btn-success" onClick={handleExecuteRebalance} disabled={anyLoading || trades.length === 0}>
+                            {executeLoading ? 'Executing...' : 'Execute Rebalance'}
+                        </button>
                         {holdings && holdings.length > 0 && (
                             <button className="btn btn-ghost" onClick={() => exportPortfolio(holdings)}>Export CSV</button>
                         )}
-                        <button className="btn btn-ghost" onClick={handleInit} disabled={loading} title="Quick demo allocation">
-                            Quick Demo Initialize
-                        </button>
                     </div>
 
                     <div className="bento-grid">
@@ -475,7 +488,7 @@ export default function Portfolio() {
                                                         <button
                                                             className="btn btn-ghost"
                                                             style={{ color: 'var(--accent-red)', padding: '6px 10px', fontSize: 12 }}
-                                                            disabled={loading || removingSymbol === h.symbol}
+                                                            disabled={anyLoading || removingSymbol === h.symbol}
                                                             onClick={() => handleRemoveHolding(h.symbol)}
                                                             title={`Sell all ${h.symbol} shares and remove holding`}
                                                         >
@@ -561,7 +574,7 @@ export default function Portfolio() {
                                     />
                                 </div>
 
-                                <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={handleAddHolding} disabled={loading}>
+                                <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={handleAddHolding} disabled={anyLoading}>
                                     Add Holding
                                 </button>
                                 <p style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -571,22 +584,26 @@ export default function Portfolio() {
 
                             <div className="glass-card no-hover">
                                 <div className="card-header"><h3>Suggested Trades</h3></div>
-                                {trades.length === 0 ? (
-                                    <p className="empty-state">Run rebalance preview to see suggested trades</p>
-                                ) : trades.map((t, i) => (
-                                    <div className="list-item" key={i} style={{ borderLeft: `3px solid ${t.type === 'buy' ? 'var(--accent-green)' : 'var(--accent-red)'}` }}>
-                                        <div className="item-left">
-                                            <div>
-                                                <div className="item-symbol">{t.type?.toUpperCase()} {t.symbol}</div>
-                                                <div className="item-name">{t.currentWeight} ? {t.targetWeight}</div>
+                                {trades.length > 0 ? (
+                                    trades.map((t, i) => (
+                                        <div className="list-item" key={i} style={{ borderLeft: `3px solid ${t.type === 'buy' ? 'var(--accent-green)' : 'var(--accent-red)'}` }}>
+                                            <div className="item-left">
+                                                <div>
+                                                    <div className="item-symbol">{t.type?.toUpperCase()} {t.symbol}</div>
+                                                    <div className="item-name">{t.currentWeight} ? {t.targetWeight}</div>
+                                                </div>
+                                            </div>
+                                            <div className="item-right">
+                                                <div className="item-amount">{formatCurrency(t.tradeValue, portfolioCurrency, currencyLocale)}</div>
+                                                <div className="item-weight">{t.signal}</div>
                                             </div>
                                         </div>
-                                        <div className="item-right">
-                                            <div className="item-amount">{formatCurrency(t.tradeValue, portfolioCurrency, currencyLocale)}</div>
-                                            <div className="item-weight">{t.signal}</div>
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))
+                                ) : hasRunRebalancePreview ? (
+                                    <p className="empty-state">Preview complete. No trades met the rebalance threshold.</p>
+                                ) : (
+                                    <p className="empty-state">Run rebalance preview to see suggested trades</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -677,4 +694,3 @@ export default function Portfolio() {
         </div>
     );
 }
-

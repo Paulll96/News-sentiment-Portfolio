@@ -89,6 +89,7 @@ graph LR
 - PostgreSQL 14+
 - HuggingFace API key (free at [huggingface.co](https://huggingface.co))
 - NewsAPI key (free tier at [newsapi.org](https://newsapi.org))
+- Twelve Data API key for live quotes
 
 ### 1. Clone and Install
 
@@ -105,7 +106,7 @@ cd ../client && npm install
 
 ### 2. Environment Variables
 
-Create a `.env` file inside the `server/` directory:
+Create a `.env` file in the project root:
 
 ```env
 # Database
@@ -117,6 +118,9 @@ JWT_SECRET=your-long-secret-key-here
 # APIs
 HUGGINGFACE_API_KEY=hf_your_key_here
 NEWS_API_KEY=your_newsapi_key_here
+QUOTE_PROVIDER=twelvedata
+QUOTE_API_KEY=your_twelvedata_key_here
+QUOTE_API_BASE_URL=https://api.twelvedata.com
 
 # Server
 PORT=3001
@@ -129,6 +133,8 @@ SCRAPE_INTERVAL_MINUTES=15
 MAX_POSITION_PERCENT=30
 REBALANCE_THRESHOLD=0.05
 ```
+
+Live quotes for add-holding/import flows require a valid Twelve Data API key. Yahoo fallback should be treated as best-effort only, not as a guaranteed live quote source.
 
 ### 3. Database Setup
 
