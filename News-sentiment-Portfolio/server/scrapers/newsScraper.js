@@ -5,13 +5,14 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { query } = require('../db');
+const { resolveGoogleNewsUrl, sanitizeGoogleSnippet } = require('../services/googleNewsResolver');
 const { scrapeStocktwits } = require('./stocktwitsScraper');
 
 // Baseline keyword map (US-heavy), supplemented by generic ticker parsing.
 const STOCK_KEYWORDS = {
     AAPL: ['apple', 'iphone', 'ipad', 'mac', 'tim cook'],
     MSFT: ['microsoft', 'windows', 'azure', 'xbox', 'satya nadella'],
-    GOOGL: ['google', 'alphabet', 'youtube', 'android', 'sundar pichai'],
+    GOOGL: ['alphabet', 'youtube', 'android', 'google cloud', 'sundar pichai'],
     AMZN: ['amazon', 'aws', 'prime', 'alexa', 'jeff bezos', 'andy jassy'],
     TSLA: ['tesla', 'elon musk', 'cybertruck', 'model 3', 'model y', 'spacex'],
     NVDA: ['nvidia', 'gpu', 'geforce', 'cuda', 'jensen huang'],
@@ -138,25 +139,36 @@ async function scrapeGoogleNewsIndia() {
         );
 
         const $ = cheerio.load(response.data, { xmlMode: true });
+        const items = $('item').toArray().slice(0, 50);
         const articles = [];
 
-        $('item').each((i, el) => {
-            if (i >= 50) return false;
-            const title = $(el).find('title').first().text().trim();
-            const link = $(el).find('link').first().text().trim();
-            const pubDate = $(el).find('pubDate').first().text().trim();
-            const description = $(el).find('description').first().text().trim();
+        console.log(`Resolving ${items.length} Google News India URLs (concurrency: 4)...`);
 
-            if (!title || !link) return;
+        // Batch processing with concurrency cap of 4
+        for (let i = 0; i < items.length; i += 4) {
+            const batch = items.slice(i, i + 4);
+            const resolvedBatch = await Promise.all(batch.map(async (el) => {
+                const title = $(el).find('title').first().text().trim();
+                const link = $(el).find('link').first().text().trim();
+                const pubDate = $(el).find('pubDate').first().text().trim();
+                const description = $(el).find('description').first().text().trim();
 
-            articles.push({
-                source: 'google_news_india',
-                title,
-                content: description || null,
-                url: link,
-                published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString()
-            });
-        });
+                if (!title || !link) return null;
+
+                const resolvedUrl = await resolveGoogleNewsUrl(link);
+                const cleanContent = sanitizeGoogleSnippet(description);
+
+                return {
+                    source: 'google_news_india',
+                    title,
+                    content: cleanContent,
+                    url: resolvedUrl,
+                    published_at: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString()
+                };
+            }));
+
+            articles.push(...resolvedBatch.filter(Boolean));
+        }
 
         console.log(`Scraped ${articles.length} articles from Google News India RSS`);
         return articles;
@@ -245,7 +257,14 @@ async function scrapeReddit() {
 function detectStockMentions(text) {
     if (!text) return [];
 
-    const rawText = String(text);
+    let rawText = String(text);
+    
+    // Normalize and clean text before mention detection
+    rawText = rawText
+        .replace(/google_news_india|newsapi_india|newsapi|yahoo_finance|stocktwits/gi, ' ')
+        .replace(/https?:\/\/[^\s]+/g, ' ')
+        .replace(/&[a-z0-9]+;/gi, ' ');
+
     const lowerText = rawText.toLowerCase();
     const mentions = new Set();
 
@@ -278,7 +297,7 @@ function detectStockMentions(text) {
     ]);
 
     // Bare uppercase token fallback (AAPL/MSFT style)
-    for (const match of rawText.matchAll(/\b([A-Z]{1,5})\b(?!\.)/g)) {
+    for (const match of rawText.matchAll(/\b([A-Z]{2,5})\b(?!\.)/g)) { // Use 2+ chars to avoid single-letter noise
         const token = match[1];
         if (!tickerStopWords.has(token)) {
             mentions.add(token);
@@ -309,8 +328,8 @@ async function saveArticles(articles) {
     for (const article of articles) {
         try {
             if (!article?.url) continue;
-            const normalizedUrl = String(article.url).trim();
-            const safeUrl = normalizedUrl.length > 500 ? normalizedUrl.slice(0, 500) : normalizedUrl;
+            const normalizedUrl = String(article.url || '').trim();
+            const safeUrl = normalizedUrl.length > 1000 ? normalizedUrl.slice(0, 1000) : normalizedUrl;
             if (!safeUrl) continue;
 
             const existing = await query(

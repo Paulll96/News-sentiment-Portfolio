@@ -6,6 +6,12 @@ const express = require('express');
 const { query } = require('../db');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { runAllScrapers, detectStockMentions } = require('../scrapers/newsScraper');
+const {
+    isGoogleNewsUrl,
+    isResolvedPublisherUrl,
+    resolveGoogleNewsUrl,
+    buildNewsSearchFallbackUrl,
+} = require('../services/googleNewsResolver');
 
 const router = express.Router();
 
@@ -80,6 +86,72 @@ router.get('/sources', async (req, res) => {
     } catch (error) {
         console.error('Get sources error:', error);
         res.status(500).json({ error: 'Failed to get sources' });
+    }
+});
+
+/**
+ * GET /api/news/open/:id
+ * Redirect to the best-known article URL, with Google News fallback resolution.
+ */
+router.get('/open/:id', async (req, res) => {
+    try {
+        const articleId = String(req.params.id || '').trim();
+        if (!articleId) {
+            return res.status(400).type('html').send('<h1>Invalid article</h1><p>Missing article id.</p>');
+        }
+
+        const result = await query(
+            `SELECT id, title, url
+             FROM news_articles
+             WHERE id = $1
+             LIMIT 1`,
+            [articleId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).type('html').send('<h1>Article not found</h1><p>This news item no longer exists.</p>');
+        }
+
+        const article = result.rows[0];
+        let targetUrl = String(article.url || '').trim();
+
+        if (!targetUrl) {
+            return res.redirect(302, buildNewsSearchFallbackUrl(article.title));
+        }
+
+        if (isGoogleNewsUrl(targetUrl)) {
+            const resolvedUrl = await resolveGoogleNewsUrl(targetUrl);
+            if (isResolvedPublisherUrl(resolvedUrl)) {
+                targetUrl = resolvedUrl;
+
+                try {
+                    const duplicate = await query(
+                        'SELECT id FROM news_articles WHERE url = $1 AND id != $2 LIMIT 1',
+                        [resolvedUrl, article.id]
+                    );
+
+                    if (duplicate.rows.length === 0) {
+                        await query(
+                            'UPDATE news_articles SET url = $1 WHERE id = $2',
+                            [resolvedUrl, article.id]
+                        );
+                    }
+                } catch (updateError) {
+                    console.warn(`Best-effort article URL update failed for ${article.id}: ${updateError.message}`);
+                }
+            }
+        }
+
+        if (!isResolvedPublisherUrl(targetUrl)) {
+            // This captures broken Google News links (the 400 error sources).
+            return res.redirect(302, buildNewsSearchFallbackUrl(article.title));
+        }
+
+        // This allows normal links (Reddit, Yahoo, specific publisher links) right through!
+        return res.redirect(302, targetUrl);
+    } catch (error) {
+        console.error('Open news article error:', error);
+        return res.status(500).type('html').send('<h1>Unable to open article</h1><p>An unexpected error occurred while resolving this link.</p>');
     }
 });
 
