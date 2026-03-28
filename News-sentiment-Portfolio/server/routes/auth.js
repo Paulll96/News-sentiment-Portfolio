@@ -94,6 +94,7 @@ router.post('/login', async (req, res) => {
         // Update last login
         await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
 
+        /* 
         // If 2FA is enabled, return temp token requiring TOTP validation
         if (user.totp_enabled) {
             const tempToken = jwt.sign(
@@ -107,6 +108,7 @@ router.post('/login', async (req, res) => {
                 message: 'Two-factor authentication required',
             });
         }
+        */
 
         // Generate JWT token (includes role for admin check)
         const token = jwt.sign(
