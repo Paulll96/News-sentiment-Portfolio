@@ -15,7 +15,7 @@ const {
     removeHolding,
     importHoldings
 } = require('../services/portfolioService');
-const { classifySignal } = require('../services/sentimentService');
+const { classifySignal, getStockSentimentsBySymbols } = require('../services/sentimentService');
 
 const router = express.Router();
 
@@ -29,19 +29,26 @@ router.get('/', authenticateToken, async (req, res) => {
         const holdings = await getPortfolioHoldings(req.user.userId);
         const totalValue = holdings.reduce((sum, h) => sum + parseFloat(h.current_value || 0), 0);
 
+        const heldSymbols = [...new Set(holdings.map(h => String(h.symbol || '').trim().toUpperCase()).filter(Boolean))];
+        const sentiments = heldSymbols.length > 0 ? await getStockSentimentsBySymbols(heldSymbols) : [];
+        const sentimentBySymbol = new Map(sentiments.map(s => [s.symbol, s.wss]));
+
         res.json({
-            holdings: holdings.map(h => ({
-                symbol: h.symbol,
-                name: h.name,
-                exchange: h.exchange,
-                currency: h.currency || 'INR',
-                shares: parseFloat(h.shares),
-                avgCost: h.avg_cost !== null ? parseFloat(h.avg_cost) : null,
-                currentValue: parseFloat(h.current_value),
-                weight: parseFloat(h.weight) * 100,
-                sentimentScore: parseFloat(h.sentiment_score),
-                signal: classifySignal(h.sentiment_score)
-            })),
+            holdings: holdings.map(h => {
+                const liveScore = sentimentBySymbol.get(String(h.symbol || '').trim().toUpperCase()) || parseFloat(h.sentiment_score || 0);
+                return {
+                    symbol: h.symbol,
+                    name: h.name,
+                    exchange: h.exchange,
+                    currency: h.currency || 'INR',
+                    shares: parseFloat(h.shares),
+                    avgCost: h.avg_cost !== null ? parseFloat(h.avg_cost) : null,
+                    currentValue: parseFloat(h.current_value),
+                    weight: parseFloat(h.weight) * 100,
+                    sentimentScore: liveScore,
+                    signal: classifySignal(liveScore)
+                };
+            }),
             summary: {
                 totalValue,
                 holdingsCount: holdings.length,

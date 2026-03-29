@@ -77,6 +77,13 @@ export default function News() {
         }
     };
 
+    const getArticleHref = (article) => {
+        if (article?.id) {
+            return `/api/news/open/${article.id}`;
+        }
+
+        return article?.url || '#';
+    };
 
     return (
         <div className="page-enter">
@@ -146,7 +153,7 @@ export default function News() {
                                     <div className={`news-sentiment-icon ${displaySentiment}`}>{displayIcon}</div>
                                     <div className="news-body">
                                         <div className="news-title">
-                                            <a href={article.url || '#'} target="_blank" rel="noopener noreferrer">{article.title}</a>
+                                            <a href={getArticleHref(article)} target="_blank" rel="noopener noreferrer">{article.title}</a>
                                         </div>
                                         <div className="news-meta">
                                             <span className="source">{article.source}</span>

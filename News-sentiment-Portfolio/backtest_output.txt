@@ -1,0 +1,46 @@
+﻿Could not login, registering new user...
+Registered OK
+Status: 201
+Keys: [
+  'message',
+  'backtest',
+  'equityCurve',
+  'sentimentDataUsed',
+  'summary'
+]
+equityCurve length: 15
+First 3: [
+  {
+    "date": "2025-01-01",
+    "portfolio": 10000,
+    "benchmark": 10000
+  },
+  {
+    "date": "2025-02-01",
+    "portfolio": 10060,
+    "benchmark": 10079.74
+  },
+  {
+    "date": "2025-03-01",
+    "portfolio": 10120.36,
+    "benchmark": 10160.12
+  }
+]
+Last: [
+  {
+    "date": "2026-03-01",
+    "portfolio": 10907.66,
+    "benchmark": 11176.13
+  }
+]
+Summary: {
+  "initialCapital": 10000,
+  "finalValue": "10907.66",
+  "totalReturn": "9.08%",
+  "cagr": "7.28%",
+  "sharpeRatio": "12.33",
+  "maxDrawdown": "0.00%",
+  "alpha": "-2.72%",
+  "years": "1.2"
+}
+equityCurve[0] keys: [ 'date', 'portfolio', 'benchmark' ]

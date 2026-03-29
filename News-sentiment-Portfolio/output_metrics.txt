@@ -1,0 +1,72 @@
+﻿Γ£à Connected to PostgreSQL database
+Executed query { text: 'SELECT id FROM users LIMIT 1', duration: 88, rows: 1 }
+Executed query {
+  text: 'SELECT t.type, t.shares, t.executed_at, s.symbol\n ',
+  duration: 10,
+  rows: 10
+}
+Executed query {
+  text: 'SELECT COALESCE(SUM(t.total_value), 0) as initial_',
+  duration: 3,
+  rows: 1
+}
+Initial Value: 10000.01
+Performance History: [
+  { date: 'Feb 27', portfolio: 0 },
+  { date: 'Feb 28', portfolio: 0 },
+  { date: 'Mar 1', portfolio: 0 },
+  { date: 'Mar 2', portfolio: 3284 },
+  { date: 'Mar 3', portfolio: 3275 },
+  { date: 'Mar 4', portfolio: 3310 },
+  { date: 'Mar 5', portfolio: 3293 },
+  { date: 'Mar 6', portfolio: 3245 },
+  { date: 'Mar 7', portfolio: 3245 },
+  { date: 'Mar 8', portfolio: 3245 },
+  { date: 'Mar 9', portfolio: 3266 },
+  { date: 'Mar 10', portfolio: 3273 },
+  { date: 'Mar 11', portfolio: 3275 },
+  { date: 'Mar 12', portfolio: 3218 },
+  { date: 'Mar 13', portfolio: 3173 },
+  { date: 'Mar 14', portfolio: 3173 },
+  { date: 'Mar 15', portfolio: 3173 },
+  { date: 'Mar 16', portfolio: 3216 },
+  { date: 'Mar 17', portfolio: 3217 },
+  { date: 'Mar 18', portfolio: 3172 },
+  { date: 'Mar 19', portfolio: 3145 },
+  { date: 'Mar 20', portfolio: 3094 },
+  { date: 'Mar 21', portfolio: 3094 },
+  { date: 'Mar 22', portfolio: 3094 },
+  { date: 'Mar 23', portfolio: 3137 },
+  { date: 'Mar 24', portfolio: 3105 },
+  { date: 'Mar 25', portfolio: 3126 },
+  { date: 'Mar 26', portfolio: 3035 },
+  { date: 'Mar 27', portfolio: 2953 },
+  { date: 'Mar 28', portfolio: 2953 }
+]
+Daily Returns: [
+                      0,                      0,
+                      0, -0.0027405602923264312,
+   0.010687022900763359,   -0.00513595166163142,
+  -0.014576374126935925,                      0,
+                      0,  0.0064714946070878274,
+  0.0021432945499081446,  0.0006110601894286587,
+  -0.017404580152671757,  -0.013983840894965818,
+                      0,                      0,
+   0.013551843681058934,  0.0003109452736318408,
+  -0.013988187752564501,  -0.008511979823455234,
+  -0.016216216216216217,                      0,
+                      0,   0.013897866839043309,
+  -0.010200828817341408,    0.00676328502415459,
+    -0.0291106845809341,   -0.02701812191103789,
+                      0
+]
+Avg Return (Daily over Month): -0.0036017418332760015
+Standard Deviation: 0.010446713915129807
+Annualized Sharpe Ratio Calculation: -1.1943276903458289
+Executed query {
+  text: 'SELECT current_value FROM portfolio_holdings WHERE',
+  duration: 4,
+  rows: 10
+}
+Total Current Value: 10000.010000000002
+Total Return %: 0.00

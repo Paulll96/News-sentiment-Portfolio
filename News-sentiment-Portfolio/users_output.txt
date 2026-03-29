@@ -1,0 +1,8 @@
+﻿Γ£à Connected to PostgreSQL database
+Executed query { text: 'SELECT id, email FROM users LIMIT 5', duration: 92, rows: 5 }
+Users:
+  testuser@example.com -> 5bedc393-bedf-4063-8596-e1a7b8006ad9
+  sidhukrajesh@gmail.com -> 18dc85c3-662d-4643-8683-34224242b71e
+  user1@gmail.com -> cc3e4b5c-defa-43aa-82b7-913d6c8053b0
+  test5@asteroid.com -> 44a8771b-36b8-4ef9-8c01-e63e36a70369
+  codex.2fa.1772987624947@example.com -> d43aee7c-581f-4411-b4db-7b4cdb921f3e
